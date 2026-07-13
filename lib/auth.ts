@@ -27,6 +27,7 @@ export async function getCurrentMember(): Promise<CurrentMember | null> {
     .from('members')
     .select('*, households(name)')
     .eq('auth_user_id', user.id)
+    .eq('active', true)
     .maybeSingle();
 
   // First login: match an unclaimed member by email and link it to this auth user.
@@ -36,6 +37,7 @@ export async function getCurrentMember(): Promise<CurrentMember | null> {
       .select('*, households(name)')
       .ilike('email', user.email)
       .is('auth_user_id', null)
+      .eq('active', true)
       .maybeSingle();
     if (byEmail) {
       await admin.from('members').update({ auth_user_id: user.id }).eq('id', byEmail.id);

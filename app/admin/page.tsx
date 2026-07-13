@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getCurrentMember } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { AdminPanel, type AdminData } from '@/components/AdminPanel';
+import { RosterManager } from '@/components/RosterManager';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,7 +77,10 @@ export default async function AdminPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold text-bay-700 dark:text-bay-500">Board admin</h1>
-      <AdminPanel data={data} />
+      <div className="flex flex-col gap-10">
+        <RosterManager />
+        <AdminPanel data={data} />
+      </div>
     </main>
   );
 }

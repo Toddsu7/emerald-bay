@@ -34,7 +34,7 @@ Invariants (do not weaken — BUILD SPEC §13):
 
 ```
 supabase/migrations/   0001 schema · 0002 seed · 0003 engine · 0004 auth+RLS
-                       0005 notifications · 0006 storage
+                       0005 notifications · 0006 storage · 0007 member.active
 docs/RUN_ME_*.sql      paste-into-SQL-editor copies of each migration
 lib/                   pure logic (caps, hours, sun, session) + supabase clients,
                        auth, actions, board, notify — 48 unit/integration tests
