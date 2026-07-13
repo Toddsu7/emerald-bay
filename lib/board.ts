@@ -13,6 +13,7 @@ export interface BoardHull {
   sticker: number;
   craftType: string;
   photoUrl: string | null;
+  thumbUrl: string | null;
   isGuest: boolean;
   guestName: string | null;
 }
@@ -57,7 +58,7 @@ export async function getBoard(): Promise<LakeBoard[]> {
     const { data: sessionsRaw } = await supabase
       .from('sessions')
       .select(
-        'id, household_id, started_at, hard_end_at, last_call, households(name), session_watercraft(is_guest_operated, guest_name, watercraft(sticker_number, craft_type, photo_url))',
+        'id, household_id, started_at, hard_end_at, last_call, households(name), session_watercraft(is_guest_operated, guest_name, watercraft(sticker_number, craft_type, photo_url, thumb_url))',
       )
       .eq('lake_id', lake.id)
       .is('ended_at', null)
@@ -75,6 +76,7 @@ export async function getBoard(): Promise<LakeBoard[]> {
         sticker: sw.watercraft?.sticker_number,
         craftType: sw.watercraft?.craft_type,
         photoUrl: sw.watercraft?.photo_url ?? null,
+        thumbUrl: sw.watercraft?.thumb_url ?? null,
         isGuest: sw.is_guest_operated,
         guestName: sw.guest_name ?? null,
       }));

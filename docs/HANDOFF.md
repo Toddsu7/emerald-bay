@@ -38,8 +38,9 @@ DB. See **"Verify the lock"** below — it's a 2-minute check.
 
 ### 1. Apply the SQL to hosted Supabase
 Dashboard → SQL Editor → paste and run **in numeric order**:
-`docs/RUN_ME_0001-0002…`, then `0003`, `0004`, `0005`, `0006`, `0007`. (Or, with the
-Supabase CLI linked: `supabase db push`.)
+`docs/RUN_ME_0001-0002…`, then `0003`–`0008`. (Or, with the Supabase CLI linked:
+`supabase db push`.) `0008` adds `watercraft.thumb_url` — **required before deploying
+the thumbnail round, or `getBoard`/check-in error on the missing column.**
 
 ### 2. Set environment variables
 In Vercel (Production + Preview) **and** local `.env.local` — see `.env.example`:
@@ -161,6 +162,18 @@ round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not shi
   deactivate/reactivate members; resend a magic-link invite; add/edit watercraft,
   reassign stickers, and transfer a hull to another household. Needs migration 0007
   (`members.active`).
+- **Photos everywhere** (needs migration 0008 `watercraft.thumb_url` + `sharp`):
+  uploads now generate a ~128px WebP thumbnail at upload time (EXIF-rotated) stored
+  next to the original. Lists (check-in "Your watercraft", Lake Status sessions) show
+  the thumbnail; no-photo hulls get a neutral placeholder, never a broken image. On
+  Lake Status each thumbnail is **tap-to-enlarge** (all members) → full-size lightbox
+  with sticker / craft / household, and the full-size original loads only on open.
+  - **Two lake aerials**: the check-in lake selectors reference `public/lakes/east.png`
+    and `public/lakes/west.png` — **drop those two files in** and they appear (the
+    `<img>` hides gracefully until then).
+  - **Backfill**: hull photos uploaded *before* 0008 have no thumbnail and show the
+    placeholder until re-uploaded. Most households haven't uploaded yet, so this is
+    minor; a re-upload regenerates the thumb.
 
 ## Not yet built (honest gaps, none blocking the core)
 

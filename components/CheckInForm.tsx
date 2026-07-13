@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { checkInAction, endSessionAction, type HullSelection } from '@/lib/actions/checkin';
 import { joinQueueAction } from '@/lib/actions/queue';
 import { lakeStatusMessage } from '@/lib/caps';
+import { HullThumb } from '@/components/HullThumb';
 
 export interface FormLake {
   id: string;
@@ -16,6 +17,7 @@ export interface FormHull {
   id: string;
   sticker: number;
   craftType: string;
+  thumbUrl: string | null;
   onWater: boolean;
 }
 export interface FormSession {
@@ -142,14 +144,28 @@ export function CheckInForm({
           <button
             key={l.id}
             onClick={() => setLakeId(l.id)}
-            className={`flex-1 rounded-xl border px-4 py-3 text-center ${
+            className={`flex-1 overflow-hidden rounded-xl border text-center ${
               l.id === lakeId
-                ? 'border-bay-600 bg-bay-50 dark:bg-slate-900'
+                ? 'border-bay-600 ring-2 ring-bay-500'
                 : 'border-slate-200 dark:border-slate-800'
             }`}
           >
-            <div className="font-semibold">{l.name}</div>
-            <div className="text-xs text-slate-500">{l.slots} open</div>
+            {/* Static, aggressively-cached aerial (public/lakes/*). Hidden gracefully
+                if the asset isn't present yet. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/lakes/${l.name.toLowerCase()}.png`}
+              alt={`${l.name} lake`}
+              loading="lazy"
+              className="h-20 w-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <div className="px-4 py-2">
+              <div className="font-semibold">{l.name}</div>
+              <div className="text-xs text-slate-500">{l.slots} open</div>
+            </div>
           </button>
         ))}
       </div>
@@ -196,6 +212,12 @@ export function CheckInForm({
                     disabled={h.onWater}
                     checked={!!sel}
                     onChange={() => toggle(h.id)}
+                  />
+                  <HullThumb
+                    thumbUrl={h.thumbUrl}
+                    sticker={h.sticker}
+                    craftType={h.craftType}
+                    size={36}
                   />
                   <span className="text-lg font-bold tabular-nums text-bay-700 dark:text-bay-400">
                     #{h.sticker}

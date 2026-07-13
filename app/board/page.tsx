@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getBoard, type LakeBoard } from '@/lib/board';
+import { HullThumb } from '@/components/HullThumb';
 
 // The live board is association-public but requires sign-in (§6). Auto-refresh via
 // a client-side poll would go here; for now it revalidates on navigation and after
@@ -60,9 +61,19 @@ function LakeCard({ lake }: { lake: LakeBoard }) {
               {s.hulls.map((h) => (
                 <span
                   key={h.sticker}
-                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-sm shadow-sm dark:bg-slate-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2 py-1 text-sm shadow-sm dark:bg-slate-800"
                   title={h.craftType}
                 >
+                  {/* Tap the photo to enlarge — this is the enforcement match (§6) */}
+                  <HullThumb
+                    thumbUrl={h.thumbUrl}
+                    photoUrl={h.photoUrl}
+                    sticker={h.sticker}
+                    craftType={h.craftType}
+                    householdName={s.householdName}
+                    size={44}
+                    enlargeable
+                  />
                   {/* Sticker number is the enforcement hero (§6) */}
                   <strong className="text-lg tabular-nums text-bay-700 dark:text-bay-400">
                     #{h.sticker}

@@ -34,7 +34,7 @@ export default async function CheckinPage() {
 
   const { data: hullsRaw } = await supabase
     .from('watercraft')
-    .select('id, sticker_number, craft_type')
+    .select('id, sticker_number, craft_type, thumb_url')
     .eq('household_id', member.householdId)
     .eq('is_checkinable', true)
     .eq('active', true)
@@ -61,6 +61,7 @@ export default async function CheckinPage() {
     id: h.id,
     sticker: h.sticker_number,
     craftType: h.craft_type,
+    thumbUrl: h.thumb_url ?? null,
     onWater: inUse.has(h.id),
   }));
 
