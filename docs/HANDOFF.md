@@ -56,14 +56,16 @@ Dashboard → Authentication:
 - Set the Site URL to `${SITE_URL}`.
 
 ### 4. Import the roster (§10)
-1. Put the two Zoho export CSVs in `./data/` (git-ignored).
-2. **Verify the column mapping** at the top of `scripts/import.ts` against your real
-   headers — the spec's quirks are encoded (hull-1 has no suffix, the `Manufacture\xa0 2`
-   nbsp, etc.) but sticker/status/manufacturer header names are best-guess.
-3. `npm run import -- --dry-run` → it parses, prints the household/hull counts and
-   craft mix, and **fails loudly** if stickers dupe or fall outside 100–350 or a
-   household lacks an email. Expect **187 households / 196 hulls**.
-4. `npm run import` to apply. Re-runnable (idempotent upserts).
+Source is the single merged CSV `data/emerald_bay_residents.csv` (git-ignored). The
+column mapping in `scripts/import.ts` is **confirmed against the real 2026 export
+header** (hull-1 type has no suffix; stickers are `2024 Sticker Number N`; hull-1
+manufacturer is `Manufacturer 1`, hulls 2–5 `Manufacture N`; no Year/HIN columns).
+1. `npm run import -- --dry-run` → **verified: reports 187 households / 196 hulls**,
+   craft mix Jet Ski 75 / Pontoon 56 / Ski-Surf 41 / Fishing 9 / E-Foil 15, zero
+   warnings. It **stops** unless it sees exactly those counts, all stickers 100–350,
+   no dupes, and an email per household.
+2. `npm run import` to apply (needs `SUPABASE_SERVICE_ROLE_KEY`). Re-runnable
+   (idempotent upserts on record id / sticker).
 
 ### 5. Make the 7 board members admins
 ```sql
