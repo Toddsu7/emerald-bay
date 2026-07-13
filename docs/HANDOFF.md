@@ -93,18 +93,22 @@ statement on its own connection and commits before you can switch tabs, so no
 contention is created. Use the real two-connection test instead:
 
 ```bash
-# Connection string: Dashboard → Project Settings → Database → "Connection string"
-# (URI). URL-encode the password.
-DATABASE_URL='postgresql://postgres:...@db.heybszfdbvavedjkgggb.supabase.co:5432/postgres' \
+# Use the SESSION pooler (port 5432), NOT the transaction pooler (6543) — 6543
+# multiplexes onto shared backends and would invalidate the lock. The direct
+# db.<ref>.supabase.co host is IPv6-only and may not resolve on an IPv4 network;
+# the session pooler is dual-stack. URL-encode the password.
+DATABASE_URL='postgresql://postgres.heybszfdbvavedjkgggb:<PW>@aws-0-<region>.pooler.supabase.com:5432/postgres' \
   npm run test:lock
 ```
 
-It opens two Postgres connections and races them for the LAST open slot on East, 8
-rounds. **It only touches its own rows** (`ZZ_LOCKTEST_*` households, a far-future
-sun_times date) and deletes them all in a `finally`, even on failure — East/West
-config and the real roster are untouched. Expect: "one won, one refused (LAKE_FULL)"
-every round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not ship.
-This is the one gate PGlite couldn't exercise.
+It races two real connections for the last slot 12 rounds on an **isolated,
+capacity-1 test lake it creates itself** — so it does NOT depend on East's live state
+(a real queue there clamps the cap and made an earlier version fail setup with
+`OVER_CAP`). It only touches its own rows (`ZZ_LOCKTEST_*` households + lake, a
+far-future sun_times date), briefly drops just the `lakes` name CHECK to create that
+lake, and restores everything in a `finally`. Every step logs, so a setup failure is
+never mistaken for a race result. Expect "one won, one refused [LAKE_FULL]" every
+round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not ship.
 
 ---
 

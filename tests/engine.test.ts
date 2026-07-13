@@ -410,3 +410,37 @@ describe('clamp boundary (§2.6) — a household AT its cap adding one more', ()
     expect(await openHulls(db, east)).toBe(2);
   });
 });
+
+describe('lock-test scenario is eligible (validates scripts/lock-test.ts setup)', () => {
+  it('capacity-1 isolated lake: first check-in wins, second gets LAKE_FULL — no OVER_CAP', async () => {
+    const db = await freshDb();
+
+    // Mirror the script: find + drop the name CHECK by its definition (not
+    // capacity>0), then create an isolated capacity-1 test lake.
+    const con = await db.query<{ conname: string }>(
+      `select con.conname from pg_constraint con
+         join pg_class rel on rel.oid = con.conrelid
+        where rel.relname='lakes' and con.contype='c'
+          and pg_get_constraintdef(con.oid) like '%East%'`,
+    );
+    expect(con.rows.length).toBe(1); // the constraint-finder in the script must match exactly one
+    await db.exec(`alter table lakes drop constraint "${con.rows[0].conname}"`);
+    const lake = (
+      await db.query<{ id: string }>(
+        "insert into lakes (name, capacity) values ('ZZ_LOCKTEST_LAKE', 1) returning id",
+      )
+    ).rows[0].id;
+
+    // Two fresh, eligible households — no queue, so cap = capacity = 1, each wants
+    // exactly one hull → passes gate 7 (this is what used to fail as OVER_CAP when
+    // the race ran on a real, queued East).
+    const a = await seedHousehold(db, 'RacerA', [{}]);
+    const b = await seedHousehold(db, 'RacerB', [{}]);
+
+    const first = await checkIn(db, lake, a.hh, a.members[0], a.hullIds);
+    expect(first).toBeTruthy();
+    // The second (the "loser" in the real concurrent race) must be LAKE_FULL, not
+    // OVER_CAP or anything else.
+    await expectCode(checkIn(db, lake, b.hh, b.members[0], b.hullIds), 'LAKE_FULL');
+  });
+});
