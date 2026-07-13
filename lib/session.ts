@@ -1,26 +1,26 @@
-// Session length, cooldown, and offer timing (BUILD SPEC §2.4, §2.7). Pure.
+// Session timing (rules doc: "a 1-hour continuous use time limit immediately
+// followed by at least a 1-hour non-use period" — continuous from the start of use).
+//
+// Hours run continuously in 1-hour blocks from started_at. The block boundary is a
+// PURE function of started_at — never reset, never extended by someone else joining
+// the queue. There is NO grace floor. At each boundary the queue is evaluated: no
+// one waiting → auto-renew; someone waiting → end at that boundary + cooldown.
 
-export const TEN_MIN_MS = 10 * 60 * 1000;
-export const SIXTY_MIN_MS = 60 * 60 * 1000;
+export const HOUR_MS = 60 * 60 * 1000;
+export const SIXTY_MIN_MS = 60 * 60 * 1000; // household cooldown / non-use period
+export const TEN_MIN_MS = 10 * 60 * 1000; // queue offer hold (§2.7) — separate concept
 
 /**
- * When a queue forms, every active session immediately gets a hard end (§2.4):
- *
- *     hard_end = max(now + 10m, started_at + 60m)
- *
- * "Nobody is ambushed off the water" (always ≥ 10 min warning) "and nobody gets to
- * stretch" (never past 60 min from their start).
+ * The end of the session's CURRENT 1-hour block: the first boundary strictly after
+ * `now`. Check in at 1:13 → 2:13, then 3:13, 4:13… The clock never resets.
  */
-export function hardEndOnQueueForm(now: Date, startedAt: Date): Date {
-  const nowPlus10 = now.getTime() + TEN_MIN_MS;
-  const startPlus60 = startedAt.getTime() + SIXTY_MIN_MS;
-  return new Date(Math.max(nowPlus10, startPlus60));
+export function currentBlockEnd(startedAt: Date, now: Date): Date {
+  const elapsed = Math.max(0, now.getTime() - startedAt.getTime());
+  const blocks = Math.floor(elapsed / HOUR_MS) + 1;
+  return new Date(startedAt.getTime() + blocks * HOUR_MS);
 }
 
-/**
- * 60-minute HOUSEHOLD cooldown after a queued-out (or clamped) session ends
- * (§2.4/§2.5). Household-level, and it blocks queueing too — the exploit fix.
- */
+/** 60-minute HOUSEHOLD cooldown (non-use period) after being rotated off. */
 export function cooldownExpiry(endedAt: Date): Date {
   return new Date(endedAt.getTime() + SIXTY_MIN_MS);
 }
@@ -28,19 +28,4 @@ export function cooldownExpiry(endedAt: Date): Date {
 /** A queue offer holds for 10 minutes (§2.7). */
 export function offerExpiry(offeredAt: Date): Date {
   return new Date(offeredAt.getTime() + TEN_MIN_MS);
-}
-
-/** Soft 60-min nudge when NO queue exists (§2.4) — display only, no enforcement. */
-export function softNudgeAt(startedAt: Date): Date {
-  return new Date(startedAt.getTime() + SIXTY_MIN_MS);
-}
-
-/**
- * The instant a session actually ends: the earlier of its hours-derived stop
- * (combinedWindow.latest, §2.2) and its queue-imposed hard end (if any). Used by
- * the board ("ends at") and the sweep.
- */
-export function effectiveEnd(hoursLatest: Date, hardEndAt: Date | null): Date {
-  if (!hardEndAt) return hoursLatest;
-  return new Date(Math.min(hoursLatest.getTime(), hardEndAt.getTime()));
 }

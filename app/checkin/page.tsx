@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getCurrentMember } from '@/lib/auth';
 import { getBoard } from '@/lib/board';
 import { createClient } from '@/lib/supabase/server';
+import { chicagoClock } from '@/lib/sun';
 import { CheckInForm, type FormLake, type FormHull, type FormSession } from '@/components/CheckInForm';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,7 @@ export default async function CheckinPage() {
 
   const { data: hullsRaw } = await supabase
     .from('watercraft')
-    .select('id, sticker_number, craft_type')
+    .select('id, sticker_number, craft_type, thumb_url')
     .eq('household_id', member.householdId)
     .eq('is_checkinable', true)
     .eq('active', true)
@@ -61,13 +62,14 @@ export default async function CheckinPage() {
     id: h.id,
     sticker: h.sticker_number,
     craftType: h.craft_type,
+    thumbUrl: h.thumb_url ?? null,
     onWater: inUse.has(h.id),
   }));
 
   const { data: mySessionsRaw } = await supabase
     .from('sessions')
     .select(
-      'id, lake_id, started_at, last_call, session_watercraft(watercraft(sticker_number))',
+      'id, lake_id, hard_end_at, last_call, session_watercraft(watercraft(sticker_number))',
     )
     .eq('household_id', member.householdId)
     .is('ended_at', null)
@@ -79,7 +81,8 @@ export default async function CheckinPage() {
   const mySessions: FormSession[] = (mySessionsRaw ?? []).map((s: any) => ({
     id: s.id,
     lakeName: lakeName[s.lake_id] ?? '',
-    lastCall: s.last_call,
+    blockEndClock: s.hard_end_at ? chicagoClock(new Date(s.hard_end_at)) : null,
+    willRenew: !s.last_call,
     stickers: (s.session_watercraft ?? []).map(
       (sw: any) => sw.watercraft?.sticker_number,
     ),

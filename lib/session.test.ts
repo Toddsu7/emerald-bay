@@ -1,42 +1,44 @@
 import { describe, it, expect } from 'vitest';
-import {
-  hardEndOnQueueForm,
-  cooldownExpiry,
-  offerExpiry,
-  effectiveEnd,
-} from './session';
+import { currentBlockEnd, cooldownExpiry, offerExpiry } from './session';
 
-describe('hardEndOnQueueForm (§2.4)', () => {
-  it('a fresh session (just started) gets now + 60m, not now + 10m', () => {
-    const now = new Date('2026-07-12T20:00:00Z');
-    const started = new Date('2026-07-12T20:00:00Z');
-    expect(hardEndOnQueueForm(now, started).toISOString()).toBe(
-      '2026-07-12T21:00:00.000Z',
+describe('currentBlockEnd — continuous 1-hour blocks from check-in', () => {
+  const started = new Date('2026-07-12T18:13:00Z'); // "1:13 PM"
+
+  it('within the first hour, ends at start + 1h (2:13)', () => {
+    expect(currentBlockEnd(started, new Date('2026-07-12T18:50:00Z')).toISOString()).toBe(
+      '2026-07-12T19:13:00.000Z',
     );
   });
 
-  it('a session already 55 min in gets now + 10m (never ambushed)', () => {
-    const started = new Date('2026-07-12T20:00:00Z');
-    const now = new Date('2026-07-12T20:55:00Z');
-    // start+60 = 21:00, now+10 = 21:05 → the later wins
-    expect(hardEndOnQueueForm(now, started).toISOString()).toBe(
-      '2026-07-12T21:05:00.000Z',
+  it('in the second hour, ends at start + 2h (3:13) — the clock never resets', () => {
+    expect(currentBlockEnd(started, new Date('2026-07-12T19:40:00Z')).toISOString()).toBe(
+      '2026-07-12T20:13:00.000Z',
     );
   });
 
-  it('a session already 2 h in still gets a full 10-min warning', () => {
-    const started = new Date('2026-07-12T18:00:00Z');
-    const now = new Date('2026-07-12T20:00:00Z');
-    expect(hardEndOnQueueForm(now, started).toISOString()).toBe(
-      '2026-07-12T20:10:00.000Z',
+  it('a session already 5 hours in still ends on the same :13 cadence', () => {
+    expect(currentBlockEnd(started, new Date('2026-07-12T23:20:00Z')).toISOString()).toBe(
+      '2026-07-13T00:13:00.000Z',
     );
+  });
+
+  it('is NOT extended by "now" — no grace floor (a queue at 6:12 still ends 6:13)', () => {
+    // started 6:00, now 6:12 → block ends 7:00 regardless of when a queue forms.
+    const s = new Date('2026-07-12T18:00:00Z');
+    expect(currentBlockEnd(s, new Date('2026-07-12T18:12:00Z')).toISOString()).toBe(
+      '2026-07-12T19:00:00.000Z',
+    );
+  });
+
+  it('exactly at check-in, ends one hour later', () => {
+    expect(currentBlockEnd(started, started).toISOString()).toBe('2026-07-12T19:13:00.000Z');
   });
 });
 
-describe('cooldownExpiry (§2.4/§2.5)', () => {
-  it('is 60 minutes after the session ends', () => {
-    expect(cooldownExpiry(new Date('2026-07-12T21:00:00Z')).toISOString()).toBe(
-      '2026-07-12T22:00:00.000Z',
+describe('cooldownExpiry — 1-hour non-use period', () => {
+  it('is 60 minutes after coming off', () => {
+    expect(cooldownExpiry(new Date('2026-07-12T19:13:00Z')).toISOString()).toBe(
+      '2026-07-12T20:13:00.000Z',
     );
   });
 });
@@ -46,22 +48,5 @@ describe('offerExpiry (§2.7)', () => {
     expect(offerExpiry(new Date('2026-07-12T21:00:00Z')).toISOString()).toBe(
       '2026-07-12T21:10:00.000Z',
     );
-  });
-});
-
-describe('effectiveEnd', () => {
-  const hours = new Date('2026-07-13T01:00:00Z'); // sunset stop
-  it('with no queue, ends at the hours boundary', () => {
-    expect(effectiveEnd(hours, null).toISOString()).toBe('2026-07-13T01:00:00.000Z');
-  });
-  it('with a queue hard end sooner, ends at the hard end', () => {
-    const hardEnd = new Date('2026-07-12T21:05:00Z');
-    expect(effectiveEnd(hours, hardEnd).toISOString()).toBe(
-      '2026-07-12T21:05:00.000Z',
-    );
-  });
-  it('with a queue hard end later than hours, still ends at hours', () => {
-    const hardEnd = new Date('2026-07-13T02:00:00Z');
-    expect(effectiveEnd(hours, hardEnd).toISOString()).toBe('2026-07-13T01:00:00.000Z');
   });
 });
