@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentMember } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { engineMessage } from '@/lib/errors';
+import { zonedWallTimeToUtc } from '@/lib/sun';
 import type { ActionResult } from '@/lib/actions/checkin';
 
 async function requireBoard() {
@@ -22,6 +23,7 @@ export async function confirmViolation(input: {
   id: string;
   fineAmount?: number | null;
   suspensionDays?: number | null;
+  note?: string;
 }): Promise<ActionResult> {
   const board = await requireBoard();
   if (!board) return { ok: false, error: 'Board only.' };
@@ -50,24 +52,49 @@ export async function confirmViolation(input: {
   const days =
     input.suspensionDays !== undefined ? input.suspensionDays : sched?.suspension_days ?? null;
 
+  const note = input.note?.trim();
+  const notes = note ? [v.notes, `Confirmed: ${note}`].filter(Boolean).join('\n') : v.notes;
+
   await admin
     .from('violations')
-    .update({ status: 'confirmed', reviewed_by: board.id, fine_amount: fine, suspension_days: days })
+    .update({
+      status: 'confirmed',
+      reviewed_by: board.id,
+      fine_amount: fine,
+      suspension_days: days,
+      notes,
+    })
     .eq('id', input.id);
 
   if (days && days > 0) {
     const until = new Date(Date.now() + days * 86_400_000).toISOString();
-    await admin.from('households').update({ suspended_until: until }).eq('id', v.household_id);
+    await admin
+      .from('households')
+      .update({
+        suspended_until: until,
+        suspended_reason: `${v.track}/${v.kind}${note ? ` — ${note}` : ''}`,
+      })
+      .eq('id', v.household_id);
   }
   revalidatePath('/admin');
   return { ok: true };
 }
 
-export async function dismissViolation(id: string): Promise<ActionResult> {
+export async function dismissViolation(input: { id: string; note?: string }): Promise<ActionResult> {
   const board = await requireBoard();
   if (!board) return { ok: false, error: 'Board only.' };
   const admin = createAdminClient();
-  await admin.from('violations').update({ status: 'dismissed', reviewed_by: board.id }).eq('id', id);
+  const { data: v } = await admin
+    .from('violations')
+    .select('notes')
+    .eq('id', input.id)
+    .maybeSingle();
+  const note = input.note?.trim();
+  const notes = note ? [v?.notes, `Dismissed: ${note}`].filter(Boolean).join('\n') : v?.notes;
+  await admin
+    .from('violations')
+    .update({ status: 'dismissed', reviewed_by: board.id, notes })
+    .eq('id', input.id);
   revalidatePath('/admin');
   return { ok: true };
 }
@@ -113,8 +140,61 @@ export async function liftSuspension(householdId: string): Promise<ActionResult>
   const admin = createAdminClient();
   await admin
     .from('households')
-    .update({ status: 'active', suspended_until: null })
+    .update({ status: 'active', suspended_until: null, suspended_reason: null })
     .eq('id', householdId);
+  revalidatePath('/admin');
+  return { ok: true };
+}
+
+/**
+ * Directly suspend a household — independent of any violation (§2.9). Pick an end
+ * DATE or a number of DAYS, and record a reason. Time-boxed via suspended_until, so
+ * it auto-expires; enforced at the same gate as cooldown.
+ */
+export async function suspendHousehold(input: {
+  householdId: string;
+  untilDate?: string; // YYYY-MM-DD
+  days?: number;
+  reason: string;
+}): Promise<ActionResult> {
+  const board = await requireBoard();
+  if (!board) return { ok: false, error: 'Board only.' };
+  const reason = input.reason?.trim();
+  if (!reason) return { ok: false, error: 'A reason is required.' };
+
+  let until: string;
+  if (input.untilDate) {
+    // through the END of the chosen local day
+    until = zonedWallTimeToUtc(input.untilDate, 23, 59).toISOString();
+  } else if (input.days && input.days > 0) {
+    until = new Date(Date.now() + input.days * 86_400_000).toISOString();
+  } else {
+    return { ok: false, error: 'Pick an end date or a number of days.' };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('households')
+    .update({ suspended_until: until, suspended_reason: reason })
+    .eq('id', input.householdId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/admin');
+  return { ok: true };
+}
+
+/** Free-form board notes on a household. */
+export async function updateHouseholdNotes(
+  householdId: string,
+  notes: string,
+): Promise<ActionResult> {
+  const board = await requireBoard();
+  if (!board) return { ok: false, error: 'Board only.' };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('households')
+    .update({ notes: notes.trim() || null })
+    .eq('id', householdId);
+  if (error) return { ok: false, error: error.message };
   revalidatePath('/admin');
   return { ok: true };
 }

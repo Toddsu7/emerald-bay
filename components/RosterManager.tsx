@@ -18,7 +18,15 @@ import {
   type RosterHull,
   type MemberInput,
   type HullInput,
+  type RosterViolation,
 } from '@/lib/actions/adminRoster';
+import {
+  suspendHousehold,
+  liftSuspension,
+  updateHouseholdNotes,
+  createViolation,
+} from '@/lib/actions/admin';
+import { BOARD_VIOLATION_TYPES } from '@/lib/violations';
 
 const inputCls =
   'rounded-lg border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900';
@@ -141,6 +149,15 @@ function HouseholdCard({
         </button>
       </div>
 
+      <SuspendControl detail={detail} onAction={onAction} pending={pending} />
+      <NotesEditor
+        key={`notes-${detail.notes ?? ''}`}
+        householdId={detail.id}
+        initial={detail.notes ?? ''}
+        onAction={onAction}
+        pending={pending}
+      />
+
       {/* Members */}
       <h4 className="mb-1 text-sm font-semibold text-slate-600 dark:text-slate-300">Members</h4>
       <ul className="mb-2 flex flex-col gap-1">
@@ -253,6 +270,206 @@ function HouseholdCard({
       ) : (
         <MiniBtn onClick={() => setAddingHull(true)}>+ Add watercraft</MiniBtn>
       )}
+
+      {/* Violation history — is this their 1st or their 4th? */}
+      <h4 className="mb-1 mt-4 text-sm font-semibold text-slate-600 dark:text-slate-300">
+        Violation history
+      </h4>
+      <ViolationHistory violations={detail.violations} />
+      <AddViolationForm householdId={detail.id} onAction={onAction} pending={pending} />
+    </div>
+  );
+}
+
+function SuspendControl({
+  detail,
+  onAction,
+  pending,
+}: {
+  detail: HouseholdDetail;
+  onAction: (p: Promise<{ ok: boolean; error?: string; message?: string }>) => void;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [untilDate, setUntilDate] = useState('');
+  const [days, setDays] = useState('');
+  const [reason, setReason] = useState('');
+  const suspended =
+    detail.status === 'suspended' ||
+    (detail.suspendedUntil != null && new Date(detail.suspendedUntil) > new Date());
+
+  return (
+    <div className="mb-3 rounded-lg border border-slate-200 p-2 text-sm dark:border-slate-800">
+      {suspended ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-red-700 dark:text-red-400">
+            Suspended
+            {detail.suspendedUntil
+              ? ` until ${new Date(detail.suspendedUntil).toLocaleDateString()}`
+              : ''}
+            {detail.suspendedReason ? ` · ${detail.suspendedReason}` : ''}
+          </span>
+          <MiniBtn onClick={() => onAction(liftSuspension(detail.id))}>Lift</MiniBtn>
+        </div>
+      ) : open ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1 text-xs">
+              Until
+              <input type="date" value={untilDate} onChange={(e) => setUntilDate(e.target.value)} className={inputCls} />
+            </label>
+            <span className="text-xs text-slate-400">or</span>
+            <label className="flex items-center gap-1 text-xs">
+              <input type="number" value={days} onChange={(e) => setDays(e.target.value)} placeholder="#" className={`${inputCls} w-16`} />
+              days
+            </label>
+          </div>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason (required)"
+            className={inputCls}
+          />
+          <div className="flex gap-2">
+            <button
+              disabled={pending}
+              onClick={() =>
+                onAction(
+                  suspendHousehold({
+                    householdId: detail.id,
+                    untilDate: untilDate || undefined,
+                    days: days === '' ? undefined : Number(days),
+                    reason,
+                  }),
+                )
+              }
+              className="rounded bg-red-700 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+            >
+              Suspend
+            </button>
+            <MiniBtn onClick={() => setOpen(false)}>Cancel</MiniBtn>
+          </div>
+        </div>
+      ) : (
+        <MiniBtn onClick={() => setOpen(true)}>Suspend household…</MiniBtn>
+      )}
+    </div>
+  );
+}
+
+function NotesEditor({
+  householdId,
+  initial,
+  onAction,
+  pending,
+}: {
+  householdId: string;
+  initial: string;
+  onAction: (p: Promise<{ ok: boolean; error?: string; message?: string }>) => void;
+  pending: boolean;
+}) {
+  const [notes, setNotes] = useState(initial);
+  return (
+    <div className="mb-3">
+      <h4 className="mb-1 text-sm font-semibold text-slate-600 dark:text-slate-300">Notes</h4>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={2}
+        placeholder="Board notes on this household…"
+        className={`${inputCls} w-full`}
+      />
+      {notes !== initial && (
+        <MiniBtn onClick={() => onAction(updateHouseholdNotes(householdId, notes))}>
+          {pending ? 'Saving…' : 'Save notes'}
+        </MiniBtn>
+      )}
+    </div>
+  );
+}
+
+function ViolationHistory({ violations }: { violations: RosterViolation[] }) {
+  if (violations.length === 0) {
+    return <p className="text-sm text-slate-400">No violations on record.</p>;
+  }
+  const statusColor: Record<string, string> = {
+    flagged: 'text-amber-700 dark:text-amber-500',
+    confirmed: 'text-red-700 dark:text-red-400',
+    dismissed: 'text-slate-400',
+  };
+  return (
+    <ul className="mb-2 flex flex-col gap-1">
+      {violations.map((v) => (
+        <li key={v.id} className="rounded-lg border border-slate-200 p-2 text-xs dark:border-slate-800">
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              {new Date(v.detectedAt).toLocaleDateString()} · {v.track}/{v.kind}
+            </span>
+            <span className={`font-medium ${statusColor[v.status] ?? ''}`}>{v.status}</span>
+          </div>
+          {(v.fineAmount != null || v.suspensionDays != null || v.notes) && (
+            <div className="mt-0.5 text-slate-500">
+              {v.fineAmount != null ? `$${v.fineAmount}` : ''}
+              {v.suspensionDays ? ` · ${v.suspensionDays}-day suspension` : ''}
+              {v.notes ? ` · ${v.notes}` : ''}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AddViolationForm({
+  householdId,
+  onAction,
+  pending,
+}: {
+  householdId: string;
+  onAction: (p: Promise<{ ok: boolean; error?: string; message?: string }>) => void;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [notes, setNotes] = useState('');
+  if (!open) return <MiniBtn onClick={() => setOpen(true)}>+ Record a violation</MiniBtn>;
+  const type = BOARD_VIOLATION_TYPES[idx];
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-bay-400 p-2 dark:border-bay-700">
+      <select value={idx} onChange={(e) => setIdx(Number(e.target.value))} className={inputCls}>
+        {BOARD_VIOLATION_TYPES.map((t, i) => (
+          <option key={t.kind} value={i}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+      <input
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="What happened (recorded)"
+        className={inputCls}
+      />
+      <div className="flex gap-2">
+        <button
+          disabled={pending}
+          onClick={() => {
+            onAction(
+              createViolation({
+                householdId,
+                track: type.track,
+                kind: type.kind,
+                notes: notes || undefined,
+              }),
+            );
+            setOpen(false);
+            setNotes('');
+          }}
+          className="rounded bg-bay-600 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+        >
+          Record (flag for review)
+        </button>
+        <MiniBtn onClick={() => setOpen(false)}>Cancel</MiniBtn>
+      </div>
     </div>
   );
 }

@@ -43,7 +43,9 @@ Dashboard → SQL Editor → paste and run **in numeric order**:
 the thumbnail round, or `getBoard`/check-in error on the missing column.** `0009`
 rebuilds the session-timing functions (below) — required for the new hours behavior
 (no crash if missing, but you'd get the old per-start-hour model). `0010` narrows the
-no-checkout auto-flag (below).
+no-checkout auto-flag (below). `0011` adds `households.notes` + `suspended_reason` —
+**required before deploying the admin round, or the roster household detail errors on
+the missing columns.**
 
 ### 2. Set environment variables
 In Vercel (Production + Preview) **and** local `.env.local` — see `.env.example`:
@@ -190,6 +192,15 @@ round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not shi
   session and the member didn't check out — force-ended at a boundary because a queue
   formed, OR ended at sunset. Auto-renewal on an empty lake is never flagged (it never
   calls end_session). Flagged → board review queue; never auto-fined.
+- **Admin depth** (migration 0011): direct **suspend a household** (end date or #
+  days + required reason) in the roster detail, plus a **Lift**; **notes** on a
+  household; **per-household violation history** (flagged/confirmed/dismissed with
+  dates, amounts, days); the flagged-review queue now shows **offense number +
+  schedule default**, and Confirm/Dismiss take an editable fine/suspension override
+  and a recorded note (the board may depart from the schedule by severity). The
+  **board-entered violation form** is now surfaced (pick a type — music, speeding,
+  wake distance, decal, wake-without-checkin, etc. — add notes, flag for review),
+  so the board can enforce the ~90% of rules the app can't auto-detect.
 - **Persistent chrome**: a bottom nav (Check-in · Lake Status · My Watercraft ·
   Household) on every signed-in page, and a sticky "You're on the water — Check out"
   bar whenever the household has an open session (checks out in one tap, from any
