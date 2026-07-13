@@ -9,6 +9,7 @@ import {
   updateScheduleRow,
 } from '@/lib/actions/admin';
 import { chicagoClock } from '@/lib/sun';
+import { violationLabel } from '@/lib/violations';
 
 export interface AdminData {
   violations: {
@@ -17,6 +18,9 @@ export interface AdminData {
     track: string;
     kind: string;
     detectedAt: string;
+    offenseNumber: number;
+    defaultFine: number | null;
+    defaultDays: number | null;
   }[];
   sessions: {
     id: string;
@@ -63,31 +67,7 @@ export function AdminPanel({ data }: { data: AdminData }) {
         )}
         <ul className="flex flex-col gap-2">
           {data.violations.map((v) => (
-            <li
-              key={v.id}
-              className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800"
-            >
-              <span>
-                <strong>{v.householdName}</strong> · {v.track}/{v.kind} ·{' '}
-                {chicagoClock(new Date(v.detectedAt))}
-              </span>
-              <span className="flex gap-2">
-                <button
-                  onClick={() => run(confirmViolation({ id: v.id }))}
-                  disabled={pending}
-                  className="rounded bg-bay-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
-                >
-                  Confirm (apply schedule)
-                </button>
-                <button
-                  onClick={() => run(dismissViolation(v.id))}
-                  disabled={pending}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-700"
-                >
-                  Dismiss
-                </button>
-              </span>
-            </li>
+            <ReviewRow key={v.id} v={v} onAction={run} pending={pending} />
           ))}
         </ul>
       </section>
@@ -161,6 +141,88 @@ export function AdminPanel({ data }: { data: AdminData }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function ordinal(n: number): string {
+  if (n === 1) return '1st';
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return `${n}th`;
+}
+
+function ReviewRow({
+  v,
+  onAction,
+  pending,
+}: {
+  v: AdminData['violations'][number];
+  onAction: (p: Promise<{ ok: boolean; error?: string }>) => void;
+  pending: boolean;
+}) {
+  const [fine, setFine] = useState(v.defaultFine?.toString() ?? '');
+  const [days, setDays] = useState(v.defaultDays?.toString() ?? '');
+  const [note, setNote] = useState('');
+  const inp = 'rounded border border-slate-300 px-1 py-0.5 dark:border-slate-700 dark:bg-slate-900';
+
+  return (
+    <li className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
+      <div className="flex items-baseline justify-between gap-2">
+        <span>
+          <strong>{v.householdName}</strong> · {violationLabel(v.track, v.kind)}
+        </span>
+        <span className="shrink-0 text-xs text-slate-400">
+          {chicagoClock(new Date(v.detectedAt))}
+        </span>
+      </div>
+      {/* Offense number is the key fact — is this their 1st or their 4th? */}
+      <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-500">
+        {ordinal(v.offenseNumber)} {v.track} offense · schedule default:{' '}
+        {v.defaultFine != null ? `$${v.defaultFine}` : 'no fine'}
+        {v.defaultDays ? ` · ${v.defaultDays}-day suspension` : ''}
+      </p>
+      {/* Editable — the board may depart from the schedule by severity. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1 text-xs">
+          $<input value={fine} onChange={(e) => setFine(e.target.value)} placeholder="—" className={`${inp} w-16`} />
+        </label>
+        <label className="flex items-center gap-1 text-xs">
+          <input value={days} onChange={(e) => setDays(e.target.value)} placeholder="0" className={`${inp} w-12`} />
+          days
+        </label>
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Reason / note (recorded)"
+          className={`${inp} min-w-0 flex-1 px-2 text-xs`}
+        />
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={() =>
+            onAction(
+              confirmViolation({
+                id: v.id,
+                fineAmount: fine === '' ? null : Number(fine),
+                suspensionDays: days === '' ? null : Number(days),
+                note: note || undefined,
+              }),
+            )
+          }
+          disabled={pending}
+          className="rounded bg-bay-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+        >
+          Confirm
+        </button>
+        <button
+          onClick={() => onAction(dismissViolation({ id: v.id, note: note || undefined }))}
+          disabled={pending}
+          className="rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-700"
+        >
+          Dismiss
+        </button>
+      </div>
+    </li>
   );
 }
 

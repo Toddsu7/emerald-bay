@@ -22,9 +22,39 @@ export default async function AdminPage() {
 
   const { data: violations } = await admin
     .from('violations')
-    .select('id, track, kind, status, detected_at, fine_amount, suspension_days, households(name)')
+    .select('id, household_id, track, kind, status, detected_at, households(name)')
     .eq('status', 'flagged')
     .order('detected_at', { ascending: false });
+
+  // For each flag, the household's offense number in that track + the schedule
+  // default — the single most important fact when applying (or departing from) it.
+  const enrichedViolations = await Promise.all(
+    (violations ?? []).map(async (v: any) => {
+      const { count } = await admin
+        .from('violations')
+        .select('*', { count: 'exact', head: true })
+        .eq('household_id', v.household_id)
+        .eq('track', v.track)
+        .eq('status', 'confirmed');
+      const offense = (count ?? 0) + 1;
+      const { data: sched } = await admin
+        .from('violation_schedule')
+        .select('fine_amount, suspension_days')
+        .eq('track', v.track)
+        .eq('offense_number', offense)
+        .maybeSingle();
+      return {
+        id: v.id,
+        householdName: v.households?.name ?? '',
+        track: v.track,
+        kind: v.kind,
+        detectedAt: v.detected_at,
+        offenseNumber: offense,
+        defaultFine: sched?.fine_amount ?? null,
+        defaultDays: sched?.suspension_days ?? null,
+      };
+    }),
+  );
 
   const { data: sessions } = await admin
     .from('sessions')
@@ -45,13 +75,7 @@ export default async function AdminPage() {
     .or(`status.eq.suspended,suspended_until.gt.${nowIso}`);
 
   const data: AdminData = {
-    violations: (violations ?? []).map((v: any) => ({
-      id: v.id,
-      householdName: v.households?.name ?? '',
-      track: v.track,
-      kind: v.kind,
-      detectedAt: v.detected_at,
-    })),
+    violations: enrichedViolations,
     sessions: (sessions ?? []).map((s: any) => ({
       id: s.id,
       householdName: s.households?.name ?? '',

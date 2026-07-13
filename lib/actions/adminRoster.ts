@@ -39,13 +39,27 @@ export interface RosterHull {
   model: string | null;
   active: boolean;
 }
+export interface RosterViolation {
+  id: string;
+  track: string;
+  kind: string;
+  status: string;
+  detectedAt: string;
+  fineAmount: number | null;
+  suspensionDays: number | null;
+  notes: string | null;
+}
 export interface HouseholdDetail {
   id: string;
   name: string;
   address: string | null;
   status: string;
+  suspendedUntil: string | null;
+  suspendedReason: string | null;
+  notes: string | null;
   members: RosterMember[];
   hulls: RosterHull[];
+  violations: RosterViolation[];
 }
 
 async function requireBoard() {
@@ -97,12 +111,12 @@ export async function getHouseholdDetail(householdId: string): Promise<Result<Ho
   const admin = createAdminClient();
   const { data: h } = await admin
     .from('households')
-    .select('id, name, address, status')
+    .select('id, name, address, status, suspended_until, suspended_reason, notes')
     .eq('id', householdId)
     .maybeSingle();
   if (!h) return { ok: false, error: 'Household not found.' };
 
-  const [{ data: members }, { data: hulls }] = await Promise.all([
+  const [{ data: members }, { data: hulls }, { data: violations }] = await Promise.all([
     admin
       .from('members')
       .select('id, first_name, last_name, email, mobile, role, is_admin, birth_year, active, auth_user_id')
@@ -114,6 +128,11 @@ export async function getHouseholdDetail(householdId: string): Promise<Result<Ho
       .select('id, sticker_number, craft_type, is_checkinable, manufacturer, model, active')
       .eq('household_id', householdId)
       .order('sticker_number'),
+    admin
+      .from('violations')
+      .select('id, track, kind, status, detected_at, fine_amount, suspension_days, notes')
+      .eq('household_id', householdId)
+      .order('detected_at', { ascending: false }),
   ]);
 
   return {
@@ -123,6 +142,19 @@ export async function getHouseholdDetail(householdId: string): Promise<Result<Ho
       name: h.name,
       address: h.address,
       status: h.status,
+      suspendedUntil: h.suspended_until,
+      suspendedReason: h.suspended_reason,
+      notes: h.notes,
+      violations: (violations ?? []).map((v: any) => ({
+        id: v.id,
+        track: v.track,
+        kind: v.kind,
+        status: v.status,
+        detectedAt: v.detected_at,
+        fineAmount: v.fine_amount,
+        suspensionDays: v.suspension_days,
+        notes: v.notes,
+      })),
       members: (members ?? []).map((m: any) => ({
         id: m.id,
         firstName: m.first_name,
