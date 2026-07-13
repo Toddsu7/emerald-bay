@@ -19,6 +19,7 @@ const MIGRATIONS = [
   '0003_checkin_engine.sql',
   '0009_continuous_hours.sql', // rebuilds timing on 1-hour blocks (supersedes 0003 fns)
   '0010_flag_no_checkout.sql', // restore no_checkout flag on auto_expire only
+  '0012_no_queue_with_room.sql', // reject join_queue when the lake has open slots
 ];
 
 // A fixed "day": 2026-07-12. Sunrise 11:00Z (06:00 CDT), sunset 01:00Z+1 (20:00 CDT).
@@ -209,11 +210,11 @@ describe('fair-share clamp (§2.6)', () => {
     db = await freshDb();
   });
 
-  it('a queue join drops the cap and clamps the over-cap household', async () => {
+  it('a queue join (lake full) drops the cap and flags the over-cap household', async () => {
     const east = await lakeId(db, 'East');
-    const millers = await seedHousehold(db, 'Millers', [{}, {}, {}]); // 3 out, no queue → OK
+    const millers = await seedHousehold(db, 'Millers', [{}, {}, {}, {}]); // 4 → fills East
     await checkIn(db, east, millers.hh, millers.members[0], millers.hullIds);
-    expect(await openHulls(db, east)).toBe(3);
+    expect(await openHulls(db, east)).toBe(4); // full — a queue can now form
 
     const you = await seedHousehold(db, 'You', [{}]);
     await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
@@ -223,30 +224,50 @@ describe('fair-share clamp (§2.6)', () => {
       NOON_LOCAL,
     ]);
 
-    // cap is now floor(4 / (1 on water + 1 waiting)) = 2 → Millers are over.
+    // cap is now floor(4 / (1 on water + 1 waiting)) = 2 → Millers (4) are over.
     const cap = await db.query<{ c: number }>('select _current_cap($1) as c', [east]);
     expect(cap.rows[0].c).toBe(2);
 
-    // Millers' sessions are flagged last_call and given a hard end; nobody kicked.
+    // Millers' session is flagged last_call with a block boundary; nobody kicked.
     const clamp = await db.query<{ last_call: boolean; hard_end_at: string | null }>(
       'select last_call, hard_end_at from sessions where household_id=$1 and ended_at is null',
       [millers.hh],
     );
     expect(clamp.rows[0].last_call).toBe(true);
     expect(clamp.rows[0].hard_end_at).not.toBeNull();
-    expect(await openHulls(db, east)).toBe(3); // still on the water
+    expect(await openHulls(db, east)).toBe(4); // still on the water
+  });
+});
 
-    // Millers cannot start a 4th under the clamp.
-    const extra = await seedHousehold(db, 'MillersExtra', []); // no-op holder
-    void extra;
-    const more = await db.query<{ id: string }>(
-      'insert into watercraft (household_id, sticker_number, craft_type, is_checkinable) values ($1,$2,$3,true) returning id',
-      [millers.hh, sticker++, 'Pontoon'],
-    );
+describe('no queue when the lake has room (a queue only waits for a slot)', () => {
+  let db: PGlite;
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('rejects join_queue with LAKE_HAS_ROOM when slots are open; accepts once full', async () => {
+    const east = await lakeId(db, 'East');
+    const a = await seedHousehold(db, 'Alpha', [{}]);
+
+    // East is empty → nothing to wait for → refused.
     await expectCode(
-      checkIn(db, east, millers.hh, millers.members[0], [more.rows[0].id]),
-      'OVER_CAP',
+      db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
+        east,
+        a.hh,
+        a.members[0],
+        NOON_LOCAL,
+      ]),
+      'LAKE_HAS_ROOM',
     );
+
+    // Fill East to capacity (4 hulls), then the same join succeeds.
+    const f = await seedHousehold(db, 'Filler', [{}, {}, {}, {}]);
+    await checkIn(db, east, f.hh, f.members[0], f.hullIds);
+    const q = await db.query<{ id: string }>(
+      'select join_queue($1,$2,$3,$4::timestamptz) as id',
+      [east, a.hh, a.members[0], NOON_LOCAL],
+    );
+    expect(q.rows[0].id).toBeTruthy();
   });
 });
 
@@ -258,13 +279,14 @@ describe('the exploit fix (§2.5): cooldown is household-level and blocks queuei
 
   it('after a queued-out session ends, NO member of the household can re-enter or queue', async () => {
     const east = await lakeId(db, 'East');
-    // Dad checks in the family boat.
+    // Dad checks in the family boat; a filler fills the rest so a queue can form.
     const fam = await seedHousehold(db, 'Family', [{}]);
     const session = await checkIn(db, east, fam.hh, fam.members[0], fam.hullIds);
+    const filler = await seedHousehold(db, 'Filler', [{}, {}, {}]);
+    await checkIn(db, east, filler.hh, filler.members[0], filler.hullIds); // East 4/4
 
-    // A queue forms (someone waiting) → the session gets a hard end.
-    const other = await seedHousehold(db, 'Other', [{}, {}, {}, {}]);
-    void other;
+    // A household waits (lake full → queue allowed).
+    const other = await seedHousehold(db, 'Other', [{}]);
     await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
       east,
       other.hh,
@@ -347,13 +369,15 @@ describe('continuous 1-hour blocks (rules doc)', () => {
     const east = await lakeId(db, 'East');
     const a = await seedHousehold(db, 'Alpha', [{}]);
     await checkIn(db, east, a.hh, a.members[0], a.hullIds, T);
+    const filler = await seedHousehold(db, 'Filler', [{}, {}, {}]);
+    await checkIn(db, east, filler.hh, filler.members[0], filler.hullIds, T); // East 4/4
 
     const b = await seedHousehold(db, 'Bravo', [{}]);
     await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
       east,
       b.hh,
       b.members[0],
-      '2026-07-12T18:30:00Z', // queue forms mid-block
+      '2026-07-12T18:30:00Z', // queue forms mid-block (lake full → allowed)
     ]);
 
     await db.query('select sweep($1::timestamptz)', [PAST_BOUNDARY]);
@@ -448,58 +472,45 @@ describe('queue offer / accept lifecycle (§2.7, §5)', () => {
   });
 });
 
-describe('clamp boundary (§2.6) — a household AT its cap adding one more', () => {
+describe('fair-share cap gate (§2.6) — OVER_CAP in the transient post-rotation window', () => {
   let db: PGlite;
   beforeEach(async () => {
     db = await freshDb();
   });
 
-  it('holding 1 with cap 2, adding a 2nd succeeds; a 3rd is OVER_CAP', async () => {
+  // Under the continuous-hours model a queue only forms on a FULL lake, so the clean
+  // "cap 2 with a spare slot" scenarios no longer occur in steady state. The cap gate
+  // still bites in the transient window right after a boat rotates/ends and a slot is
+  // open but belongs to the queue: an over-cap household must not grab it.
+  it('an over-cap household can’t grab a freed slot ahead of the queue', async () => {
     const east = await lakeId(db, 'East');
-    const a = await seedHousehold(db, 'Alpha', [{}, {}, {}]); // 3 boats available
-    await checkIn(db, east, a.hh, a.members[0], [a.hullIds[0]]); // holds 1
+    const a = await seedHousehold(db, 'Alpha', [{}, {}, {}]); // 2 out + 1 spare
+    await checkIn(db, east, a.hh, a.members[0], [a.hullIds[0]]);
+    await checkIn(db, east, a.hh, a.members[0], [a.hullIds[1]]); // Alpha: 2 hulls, 2 sessions
+    const b = await seedHousehold(db, 'Bravo', [{}, {}]);
+    const bSess = await checkIn(db, east, b.hh, b.members[0], [b.hullIds[0], b.hullIds[1]]);
+    expect(await openHulls(db, east)).toBe(4); // full
 
-    // A queue forms → cap = floor(4 / (1 on water + 1 waiting)) = 2.
-    const b = await seedHousehold(db, 'Bravo', [{}]);
+    // Cara waits (lake full → allowed). cap = floor(4 / (2 on water + 1 waiting)) = 1.
+    const c = await seedHousehold(db, 'Cara', [{}]);
     await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
       east,
-      b.hh,
-      b.members[0],
+      c.hh,
+      c.members[0],
       NOON_LOCAL,
     ]);
-    const cap = await db.query<{ c: number }>('select _current_cap($1) as c', [east]);
-    expect(cap.rows[0].c).toBe(2);
+    expect((await db.query<{ c: number }>('select _current_cap($1) as c', [east])).rows[0].c).toBe(1);
 
-    // Holding 1, adding 1, cap 2 → EXACTLY at the boundary → must SUCCEED (1+1=2≤2).
-    const s = await checkIn(db, east, a.hh, a.members[0], [a.hullIds[1]]);
-    expect(s).toBeTruthy();
-    // Household now holds 2 (its cap). One more must be refused with OVER_CAP.
+    // Bravo is admin-voided (no cooldown for Bravo) → slots free up for the queue.
+    await db.query('select end_session($1,$2,$3::timestamptz)', [
+      bSess,
+      'admin',
+      '2026-07-12T18:40:00Z',
+    ]);
+
+    // Alpha holds 2, over its fair-share cap while Cara waits — it can't grab the
+    // freed slot with a 3rd hull even though a slot is physically open.
     await expectCode(checkIn(db, east, a.hh, a.members[0], [a.hullIds[2]]), 'OVER_CAP');
-  });
-
-  it("Todd's case: holding a boat (#107), adding a jet ski (#108) at cap 2, midday → SUCCEEDS", async () => {
-    const east = await lakeId(db, 'East');
-    const a = await seedHousehold(db, 'Sutcliffe', [
-      { type: 'Pontoon' }, // stands in for #107
-      { type: 'Jet Ski' }, // stands in for #108
-    ]);
-    await checkIn(db, east, a.hh, a.members[0], [a.hullIds[0]]); // holds the boat
-
-    const b = await seedHousehold(db, 'Waiter', [{}]);
-    await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
-      east,
-      b.hh,
-      b.members[0],
-      NOON_LOCAL,
-    ]);
-    expect((await db.query<{ c: number }>('select _current_cap($1) as c', [east])).rows[0].c).toBe(2);
-
-    // Adding the jet ski at NOON_LOCAL (inside 10:00→sunset) at the cap boundary
-    // must succeed — proves the earlier failure was NOT the cap check, and the jet
-    // ski only fails OUT_OF_HOURS when actually outside its window.
-    const s = await checkIn(db, east, a.hh, a.members[0], [a.hullIds[1]], NOON_LOCAL);
-    expect(s).toBeTruthy();
-    expect(await openHulls(db, east)).toBe(2);
   });
 });
 
