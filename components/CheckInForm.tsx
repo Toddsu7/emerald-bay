@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { checkInAction, endSessionAction, type HullSelection } from '@/lib/actions/checkin';
 import { joinQueueAction } from '@/lib/actions/queue';
-import { clampMessage } from '@/lib/caps';
+import { lakeStatusMessage } from '@/lib/caps';
 
 export interface FormLake {
   id: string;
@@ -106,9 +106,6 @@ export function CheckInForm({
     });
   }
 
-  const anyGuest = selectedIds.some((id) => selected[id]?.isGuest);
-  const capBinds = lake && lake.householdsWaiting > 0;
-
   return (
     <div className="flex flex-col gap-6">
       {/* Household's active sessions */}
@@ -157,9 +154,19 @@ export function CheckInForm({
         ))}
       </div>
 
-      {capBinds && lake && (
-        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          {clampMessage({ cap: lake.cap, householdsWaiting: lake.householdsWaiting })}
+      {lake && (
+        <p
+          className={`rounded-lg p-3 text-sm ${
+            lake.householdsWaiting > 0
+              ? 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300'
+          }`}
+        >
+          {lakeStatusMessage({
+            cap: lake.cap,
+            slots: lake.slots,
+            householdsWaiting: lake.householdsWaiting,
+          })}
         </p>
       )}
 
@@ -207,13 +214,22 @@ export function CheckInForm({
                       Guest-operated
                     </label>
                     {sel.isGuest && (
-                      <input
-                        type="text"
-                        placeholder="Guest name (optional)"
-                        value={sel.guestName}
-                        onChange={(e) => setGuestName(h.id, e.target.value)}
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Guest name (optional)"
+                          value={sel.guestName}
+                          onChange={(e) => setGuestName(h.id, e.target.value)}
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                        />
+                        {/* Acknowledgment sits with the hull it applies to, at the
+                            moment of the decision (§8). */}
+                        <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                          You are responsible for your guest&apos;s compliance with
+                          all lake rules. Violations will be recorded against your
+                          household.
+                        </p>
+                      </>
                     )}
                   </div>
                 )}
@@ -222,13 +238,6 @@ export function CheckInForm({
           })}
         </ul>
       </section>
-
-      {anyGuest && (
-        <p className="rounded-lg bg-slate-100 p-3 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-          You are responsible for your guest&apos;s compliance with all lake rules.
-          Violations will be recorded against your household.
-        </p>
-      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {notice && <p className="text-sm text-bay-700 dark:text-bay-400">{notice}</p>}

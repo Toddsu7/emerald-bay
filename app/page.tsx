@@ -18,7 +18,7 @@ export default function Home() {
           href="/board"
           className="rounded-xl bg-bay-600 px-5 py-3 text-center font-semibold text-white hover:bg-bay-700"
         >
-          Live board
+          Lake Status
         </Link>
         <Link
           href="/login"

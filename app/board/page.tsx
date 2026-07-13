@@ -18,7 +18,7 @@ export default async function BoardPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-bay-700 dark:text-bay-500">Live board</h1>
+      <h1 className="mb-6 text-2xl font-bold text-bay-700 dark:text-bay-500">Lake Status</h1>
       <div className="flex flex-col gap-8">
         {boards.map((lake) => (
           <LakeCard key={lake.id} lake={lake} />
