@@ -6,6 +6,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ensureSunTimes } from '@/lib/sunSync';
+import { notifyPendingOffers } from '@/lib/notifyOffers';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,10 @@ async function runSweep(req: NextRequest) {
   const admin = createAdminClient();
   const { data, error } = await admin.rpc('sweep');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true, result: data });
+
+  // Fire "slot open" notifications for any newly-offered entries (dormant unkeyed).
+  const notify = await notifyPendingOffers();
+  return NextResponse.json({ ok: true, result: data, ...notify });
 }
 
 export async function GET(req: NextRequest) {
