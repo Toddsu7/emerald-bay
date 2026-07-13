@@ -42,7 +42,8 @@ Dashboard → SQL Editor → paste and run **in numeric order**:
 `supabase db push`.) `0008` adds `watercraft.thumb_url` — **required before deploying
 the thumbnail round, or `getBoard`/check-in error on the missing column.** `0009`
 rebuilds the session-timing functions (below) — required for the new hours behavior
-(no crash if missing, but you'd get the old per-start-hour model).
+(no crash if missing, but you'd get the old per-start-hour model). `0010` narrows the
+no-checkout auto-flag (below).
 
 ### 2. Set environment variables
 In Vercel (Production + Preview) **and** local `.env.local` — see `.env.example`:
@@ -185,8 +186,10 @@ round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not shi
   (set at check-in, advanced on renewal); `last_call` = "a queue is waiting, won't
   renew". Lake Status shows only the current hour + "Renews automatically if no one
   is waiting," with sunset as a muted secondary line — never a far-future end time.
-  Consequence: auto-rotation no longer auto-flags a no-checkout violation (it's the
-  system working as designed); no_checkout stays board-enterable.
+  no-checkout auto-flag (migration 0010): flagged only when the SYSTEM ended the
+  session and the member didn't check out — force-ended at a boundary because a queue
+  formed, OR ended at sunset. Auto-renewal on an empty lake is never flagged (it never
+  calls end_session). Flagged → board review queue; never auto-fined.
 - **Persistent chrome**: a bottom nav (Check-in · Lake Status · My Watercraft ·
   Household) on every signed-in page, and a sticky "You're on the water — Check out"
   bar whenever the household has an open session (checks out in one tap, from any

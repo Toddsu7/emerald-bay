@@ -18,6 +18,7 @@ const MIGRATIONS = [
   '0002_seed_lakes_and_config.sql',
   '0003_checkin_engine.sql',
   '0009_continuous_hours.sql', // rebuilds timing on 1-hour blocks (supersedes 0003 fns)
+  '0010_flag_no_checkout.sql', // restore no_checkout flag on auto_expire only
 ];
 
 // A fixed "day": 2026-07-12. Sunrise 11:00Z (06:00 CDT), sunset 01:00Z+1 (20:00 CDT).
@@ -300,13 +301,14 @@ describe('the exploit fix (§2.5): cooldown is household-level and blocks queuei
       'COOLDOWN',
     );
 
-    // NEW model: auto-rotation is the system working as designed, so it does NOT
-    // auto-flag a no-checkout violation (that stays board-enterable).
-    const v = await db.query<{ n: number }>(
-      "select count(*)::int n from violations where household_id=$1 and kind='no_checkout'",
+    // The system ended it (auto_expire while a queue waited) → no_checkout is FLAGGED
+    // for board review, never auto-fined.
+    const v = await db.query<{ status: string; fine_amount: number | null }>(
+      "select status, fine_amount from violations where household_id=$1 and kind='no_checkout'",
       [fam.hh],
     );
-    expect(v.rows[0].n).toBe(0);
+    expect(v.rows[0].status).toBe('flagged');
+    expect(v.rows[0].fine_amount).toBeNull();
   });
 });
 
@@ -332,6 +334,13 @@ describe('continuous 1-hour blocks (rules doc)', () => {
     );
     expect(s.rows[0].ended_at).toBeNull(); // still on the water
     expect(new Date(s.rows[0].hard_end_at).toISOString()).toBe('2026-07-12T20:00:00.000Z'); // advanced to +2h
+
+    // Renewal is the system working as designed → NOT flagged.
+    const v = await db.query<{ n: number }>(
+      "select count(*)::int n from violations where household_id=$1 and kind='no_checkout'",
+      [a.hh],
+    );
+    expect(v.rows[0].n).toBe(0);
   });
 
   it('ends AT the boundary when someone is waiting → cooldown, no re-entry', async () => {
@@ -362,6 +371,33 @@ describe('continuous 1-hour blocks (rules doc)', () => {
       checkIn(db, east, a.hh, a.members[0], a.hullIds, '2026-07-12T19:06:00Z'),
       'COOLDOWN',
     );
+
+    // Force-ended by the system while the member didn't check out → FLAGGED.
+    const v = await db.query<{ status: string }>(
+      "select status from violations where household_id=$1 and kind='no_checkout'",
+      [a.hh],
+    );
+    expect(v.rows[0]?.status).toBe('flagged');
+  });
+
+  it('ended at sunset with no checkout → flagged no_checkout', async () => {
+    const east = await lakeId(db, 'East');
+    const a = await seedHousehold(db, 'Alpha', [{ type: 'Pontoon' }]);
+    await checkIn(db, east, a.hh, a.members[0], a.hullIds, T);
+
+    // Sweep well past sunset (SUNSET 01:00Z; a boat runs to sunset+30 = 01:30Z).
+    await db.query('select sweep($1::timestamptz)', ['2026-07-13T02:00:00Z']);
+
+    const s = await db.query<{ ended_at: string | null }>(
+      'select ended_at from sessions where household_id=$1',
+      [a.hh],
+    );
+    expect(new Date(s.rows[0].ended_at!).toISOString()).toBe('2026-07-13T01:30:00.000Z'); // sunset+30
+    const v = await db.query<{ status: string }>(
+      "select status from violations where household_id=$1 and kind='no_checkout'",
+      [a.hh],
+    );
+    expect(v.rows[0]?.status).toBe('flagged');
   });
 });
 
