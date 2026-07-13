@@ -56,21 +56,31 @@ export function canAddHulls(
 }
 
 /**
- * The live clamp explanation the UI must show (§2.6). Real numbers, not a canned
- * string — "People accept a rule they can watch working."
+ * The live lake-status line the UI shows (§2.6). Real numbers, not a canned string
+ * — "People accept a rule they can watch working." Framed as shared availability,
+ * never as a personal "cap":
+ *   • queue present → your current limit + who you're sharing with
+ *   • no queue      → how much room the lake has, and that no one is waiting
  */
-export function clampMessage({
+export function lakeStatusMessage({
   cap,
+  slots,
   householdsWaiting,
 }: {
   cap: number;
+  slots: number;
   householdsWaiting: number;
 }): string {
-  const craft = cap === 1 ? 'watercraft' : 'watercraft';
-  const households =
-    householdsWaiting === 1 ? '1 household is' : `${householdsWaiting} households are`;
-  return (
-    `You're capped at ${cap} ${craft} right now — ${households} waiting. ` +
-    `Your cap goes back up when the queue clears.`
-  );
+  if (householdsWaiting > 0) {
+    const who =
+      householdsWaiting === 1
+        ? '1 household is waiting'
+        : `${householdsWaiting} households are waiting`;
+    return (
+      `You can have ${cap} watercraft out right now. ${who}, so everyone shares ` +
+      `the lake. Your limit goes back up when the queue clears.`
+    );
+  }
+  if (slots <= 0) return 'The lake is full. No one is waiting.';
+  return `The lake has room for ${slots} more watercraft. No one is waiting.`;
 }

@@ -38,7 +38,7 @@ DB. See **"Verify the lock"** below — it's a 2-minute check.
 
 ### 1. Apply the SQL to hosted Supabase
 Dashboard → SQL Editor → paste and run **in numeric order**:
-`docs/RUN_ME_0001-0002…`, then `0003`, `0004`, `0005`, `0006`. (Or, with the
+`docs/RUN_ME_0001-0002…`, then `0003`, `0004`, `0005`, `0006`, `0007`. (Or, with the
 Supabase CLI linked: `supabase db push`.)
 
 ### 2. Set environment variables
@@ -156,6 +156,11 @@ round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not shi
   unit-tested (`lib/agegate.test.ts`).
 - **Hull photo upload + login nag** — `/hulls` uploads; `/checkin` shows a persistent
   banner while any hull lacks a photo.
+- **Admin roster management** on `/admin` (board-only, no SQL): search households by
+  name/address; add/edit members (name, email, mobile, age, role, admin flag);
+  deactivate/reactivate members; resend a magic-link invite; add/edit watercraft,
+  reassign stickers, and transfer a hull to another household. Needs migration 0007
+  (`members.active`).
 
 ## Not yet built (honest gaps, none blocking the core)
 

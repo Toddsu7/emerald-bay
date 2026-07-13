@@ -24,7 +24,7 @@ export default async function CheckinPage() {
           Ask a board member to confirm your registration.
         </p>
         <Link href="/board" className="mt-6 inline-block text-bay-700 dark:text-bay-500">
-          View the board →
+          View lake status →
         </Link>
       </main>
     );
@@ -40,12 +40,16 @@ export default async function CheckinPage() {
     .eq('active', true)
     .order('sticker_number');
 
-  // Photo nag (§10): the public board is materially useless without photos.
+  // Photo nag (§10) + household prompt (§7).
   const { count: missingPhotos } = await supabase
     .from('watercraft')
     .select('*', { count: 'exact', head: true })
     .eq('household_id', member.householdId)
     .is('photo_url', null);
+  const { count: memberCount } = await supabase
+    .from('members')
+    .select('*', { count: 'exact', head: true })
+    .eq('household_id', member.householdId);
 
   const { data: inUseRaw } = await supabase
     .from('session_watercraft')
@@ -98,7 +102,7 @@ export default async function CheckinPage() {
             <p className="text-sm text-slate-500">{member.householdName}</p>
           </div>
           <Link href="/board" className="text-sm text-bay-700 dark:text-bay-500">
-            Board →
+            Lake Status →
           </Link>
         </div>
         <nav className="mt-2 flex gap-4 text-sm text-bay-700 dark:text-bay-500">
@@ -107,15 +111,26 @@ export default async function CheckinPage() {
         </nav>
       </header>
 
-      {missingPhotos && missingPhotos > 0 ? (
-        <Link
-          href="/hulls"
-          className="mb-4 block rounded-lg bg-amber-50 p-3 text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200"
-        >
-          📷 {missingPhotos} of your watercraft {missingPhotos === 1 ? 'has' : 'have'} no photo.
-          Add {missingPhotos === 1 ? 'it' : 'them'} so shore can match the sticker to the boat →
-        </Link>
-      ) : null}
+      <div className="mb-4 flex flex-col gap-2">
+        {missingPhotos && missingPhotos > 0 ? (
+          <Link
+            href="/hulls"
+            className="block rounded-lg bg-amber-50 p-3 text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200"
+          >
+            You&apos;re required to upload a photo of each of your watercraft. Make it a
+            nice one. <span className="font-semibold underline">Add photos →</span>
+          </Link>
+        ) : null}
+        {(memberCount ?? 1) <= 1 ? (
+          <Link
+            href="/household"
+            className="block rounded-lg bg-bay-50 p-3 text-sm text-bay-800 hover:bg-bay-100 dark:bg-slate-900 dark:text-bay-200"
+          >
+            Need to add your spouse or kids so they can check in?{' '}
+            <span className="font-semibold underline">Manage household →</span>
+          </Link>
+        ) : null}
+      </div>
 
       <CheckInForm lakes={lakes} hulls={hulls} mySessions={mySessions} />
     </main>

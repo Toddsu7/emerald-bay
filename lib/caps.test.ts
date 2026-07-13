@@ -3,7 +3,7 @@ import {
   computeCap,
   overByHulls,
   canAddHulls,
-  clampMessage,
+  lakeStatusMessage,
 } from './caps';
 
 describe('computeCap — fair-share (§2.6)', () => {
@@ -68,16 +68,34 @@ describe('canAddHulls — gate 7', () => {
   });
 });
 
-describe('clampMessage — live explanation', () => {
-  it('matches the spec example for cap 1, 3 waiting', () => {
-    expect(clampMessage({ cap: 1, householdsWaiting: 3 })).toBe(
-      "You're capped at 1 watercraft right now — 3 households are waiting. " +
-        'Your cap goes back up when the queue clears.',
+describe('lakeStatusMessage — live availability, never "capped"', () => {
+  it('queue present: states the shared limit and who is waiting', () => {
+    expect(lakeStatusMessage({ cap: 2, slots: 0, householdsWaiting: 3 })).toBe(
+      'You can have 2 watercraft out right now. 3 households are waiting, so ' +
+        'everyone shares the lake. Your limit goes back up when the queue clears.',
     );
   });
   it('singularizes a single waiting household', () => {
-    expect(clampMessage({ cap: 2, householdsWaiting: 1 })).toContain(
+    expect(lakeStatusMessage({ cap: 1, slots: 0, householdsWaiting: 1 })).toContain(
       '1 household is waiting',
     );
+  });
+  it('no queue: frames it as availability, not a personal cap', () => {
+    expect(lakeStatusMessage({ cap: 4, slots: 2, householdsWaiting: 0 })).toBe(
+      'The lake has room for 2 more watercraft. No one is waiting.',
+    );
+  });
+  it('no queue but full: says full, not capped', () => {
+    expect(lakeStatusMessage({ cap: 4, slots: 0, householdsWaiting: 0 })).toBe(
+      'The lake is full. No one is waiting.',
+    );
+  });
+  it('never uses the word "capped"', () => {
+    const all = [
+      lakeStatusMessage({ cap: 2, slots: 0, householdsWaiting: 2 }),
+      lakeStatusMessage({ cap: 4, slots: 3, householdsWaiting: 0 }),
+      lakeStatusMessage({ cap: 4, slots: 0, householdsWaiting: 0 }),
+    ].join(' ');
+    expect(all.toLowerCase()).not.toContain('cap');
   });
 });

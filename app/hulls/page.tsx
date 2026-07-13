@@ -32,7 +32,8 @@ export default async function HullsPage() {
         </Link>
       </header>
       <p className="mb-4 text-sm text-slate-500">
-        Add a photo so anyone on shore can match the sticker to the boat.
+        Please upload a clean photo of your boat on the water with the sticker
+        showing. Take it from the side so the sticker is clearly readable.
       </p>
       <ul className="flex flex-col gap-4">
         {(hulls ?? []).map((h) => (
