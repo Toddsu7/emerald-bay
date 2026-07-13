@@ -38,9 +38,11 @@ DB. See **"Verify the lock"** below — it's a 2-minute check.
 
 ### 1. Apply the SQL to hosted Supabase
 Dashboard → SQL Editor → paste and run **in numeric order**:
-`docs/RUN_ME_0001-0002…`, then `0003`–`0008`. (Or, with the Supabase CLI linked:
+`docs/RUN_ME_0001-0002…`, then `0003`–`0009`. (Or, with the Supabase CLI linked:
 `supabase db push`.) `0008` adds `watercraft.thumb_url` — **required before deploying
-the thumbnail round, or `getBoard`/check-in error on the missing column.**
+the thumbnail round, or `getBoard`/check-in error on the missing column.** `0009`
+rebuilds the session-timing functions (below) — required for the new hours behavior
+(no crash if missing, but you'd get the old per-start-hour model).
 
 ### 2. Set environment variables
 In Vercel (Production + Preview) **and** local `.env.local` — see `.env.example`:
@@ -174,6 +176,21 @@ round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not shi
   - **Backfill**: hull photos uploaded *before* 0008 have no thumbnail and show the
     placeholder until re-uploaded. Most households haven't uploaded yet, so this is
     minor; a re-upload regenerates the thumb.
+
+- **Session timing rebuilt** (migration 0009) to the rules doc — 1-hour continuous
+  blocks from check-in, not a fresh hour per queue. Sessions run in fixed hours
+  (2:13, 3:13…); at each boundary: no one waiting → auto-renews silently; someone
+  waiting → ends AT the boundary, 60-min cooldown, queue promoted. **No grace floor**
+  (the old `now+10min` is gone). `hard_end_at` is now the current block boundary
+  (set at check-in, advanced on renewal); `last_call` = "a queue is waiting, won't
+  renew". Lake Status shows only the current hour + "Renews automatically if no one
+  is waiting," with sunset as a muted secondary line — never a far-future end time.
+  Consequence: auto-rotation no longer auto-flags a no-checkout violation (it's the
+  system working as designed); no_checkout stays board-enterable.
+- **Persistent chrome**: a bottom nav (Check-in · Lake Status · My Watercraft ·
+  Household) on every signed-in page, and a sticky "You're on the water — Check out"
+  bar whenever the household has an open session (checks out in one tap, from any
+  page). Root layout now renders dynamically (auth check per request).
 
 ## Not yet built (honest gaps, none blocking the core)
 

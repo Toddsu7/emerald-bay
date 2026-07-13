@@ -5,7 +5,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { sunTimesToday, chicagoClock } from '@/lib/sun';
 import { combinedWindow } from '@/lib/hours';
-import { effectiveEnd } from '@/lib/session';
 import { computeCap } from '@/lib/caps';
 import { isCheckinableType, type CheckinableCraftType, type CraftType } from '@/lib/types';
 
@@ -20,11 +19,14 @@ export interface BoardHull {
 export interface BoardSession {
   id: string;
   householdName: string;
-  startedAt: string;
   startedClock: string;
-  endsClock: string | null;
-  endsAt: number | null;
-  lastCall: boolean;
+  /** The CURRENT 1-hour block boundary — never a far-future end (rules doc). */
+  blockEndClock: string | null;
+  blockEndAt: number | null;
+  /** No one waiting → auto-renews; someone waiting → ends at the boundary. */
+  willRenew: boolean;
+  /** Sunset hard stop — secondary line only, never framed as an entitlement. */
+  sunsetClock: string | null;
   hulls: BoardHull[];
 }
 export interface BoardQueueItem {
@@ -83,20 +85,16 @@ export async function getBoard(): Promise<LakeBoard[]> {
       const crafts = hulls
         .map((h) => h.craftType as CraftType)
         .filter((t): t is CheckinableCraftType => isCheckinableType(t));
-      let endsAt: number | null = null;
-      if (crafts.length > 0) {
-        const hoursLatest = combinedWindow(crafts, sun).latest;
-        const hardEnd = s.hard_end_at ? new Date(s.hard_end_at) : null;
-        endsAt = effectiveEnd(hoursLatest, hardEnd).getTime();
-      }
+      const blockEnd = s.hard_end_at ? new Date(s.hard_end_at) : null;
+      const sunsetStop = crafts.length > 0 ? combinedWindow(crafts, sun).latest : null;
       return {
         id: s.id,
         householdName: s.households?.name ?? '',
-        startedAt: s.started_at,
         startedClock: chicagoClock(new Date(s.started_at)),
-        endsClock: endsAt ? chicagoClock(new Date(endsAt)) : null,
-        endsAt,
-        lastCall: s.last_call,
+        blockEndClock: blockEnd ? chicagoClock(blockEnd) : null,
+        blockEndAt: blockEnd ? blockEnd.getTime() : null,
+        willRenew: !s.last_call,
+        sunsetClock: sunsetStop ? chicagoClock(sunsetStop) : null,
         hulls,
       };
     });
@@ -115,10 +113,11 @@ export async function getBoard(): Promise<LakeBoard[]> {
       offered: q.status === 'offered',
     }));
 
+    // Near-term boundaries only (a queue exists, so these blocks won't renew).
     const sessionsAheadEndClocks = sessions
-      .filter((s) => s.endsAt !== null)
-      .sort((a, b) => (a.endsAt! - b.endsAt!))
-      .map((s) => chicagoClock(new Date(s.endsAt!)));
+      .filter((s) => s.blockEndAt !== null)
+      .sort((a, b) => a.blockEndAt! - b.blockEndAt!)
+      .map((s) => s.blockEndClock!);
 
     boards.push({
       id: lake.id,

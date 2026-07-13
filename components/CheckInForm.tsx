@@ -23,7 +23,8 @@ export interface FormHull {
 export interface FormSession {
   id: string;
   lakeName: string;
-  lastCall: boolean;
+  blockEndClock: string | null;
+  willRenew: boolean;
   stickers: number[];
 }
 
@@ -118,17 +119,20 @@ export function CheckInForm({
           </h2>
           <ul className="flex flex-col gap-2">
             {mySessions.map((s) => (
-              <li key={s.id} className="flex items-center justify-between text-sm">
+              <li key={s.id} className="flex items-center justify-between gap-2 text-sm">
                 <span>
                   {s.lakeName}: {s.stickers.map((n) => `#${n}`).join(', ')}
-                  {s.lastCall && (
-                    <span className="ml-2 text-amber-600">last call</span>
+                  {s.blockEndClock && (
+                    <span className="block text-xs text-slate-500">
+                      Current hour ends {s.blockEndClock} ·{' '}
+                      {s.willRenew ? 'renews if no one’s waiting' : 'someone’s waiting'}
+                    </span>
                   )}
                 </span>
                 <button
                   onClick={() => doCheckOut(s.id)}
                   disabled={pending}
-                  className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-900"
+                  className="shrink-0 rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-900"
                 >
                   Check out
                 </button>

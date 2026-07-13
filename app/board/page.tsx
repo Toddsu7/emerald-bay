@@ -51,12 +51,21 @@ function LakeCard({ lake }: { lake: LakeBoard }) {
           >
             <div className="flex items-center justify-between">
               <span className="font-medium">{s.householdName}</span>
-              <span className="text-xs text-slate-500">
-                {s.startedClock}
-                {s.endsClock ? ` → ${s.endsClock}` : ''}
-                {s.lastCall ? ' · last call' : ''}
-              </span>
+              <span className="text-xs text-slate-500">on since {s.startedClock}</span>
             </div>
+            {s.blockEndClock && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                Current hour ends {s.blockEndClock}.{' '}
+                {s.willRenew
+                  ? 'Renews automatically if no one is waiting.'
+                  : 'Someone is waiting — ends at this boundary.'}
+              </p>
+            )}
+            {s.sunsetClock && (
+              <p className="text-[11px] text-slate-400">
+                Lake closes at sunset ({s.sunsetClock}).
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap gap-2">
               {s.hulls.map((h) => (
                 <span
