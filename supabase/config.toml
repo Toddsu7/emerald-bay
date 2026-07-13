@@ -1,0 +1,26 @@
+# Supabase local config. Hosted project ref: heybszfdbvavedjkgggb
+# Link with: supabase link --project-ref heybszfdbvavedjkgggb
+project_id = "emerald-bay"
+
+[db]
+port = 54322
+major_version = 15
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Magic-link only, no passwords (§7).
+site_url = "http://localhost:3000"
+enable_signup = false
+[auth.email]
+enable_signup = false
+double_confirm_changes = true
+enable_confirmations = true
