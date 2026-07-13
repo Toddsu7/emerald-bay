@@ -40,6 +40,13 @@ export default async function CheckinPage() {
     .eq('active', true)
     .order('sticker_number');
 
+  // Photo nag (§10): the public board is materially useless without photos.
+  const { count: missingPhotos } = await supabase
+    .from('watercraft')
+    .select('*', { count: 'exact', head: true })
+    .eq('household_id', member.householdId)
+    .is('photo_url', null);
+
   const { data: inUseRaw } = await supabase
     .from('session_watercraft')
     .select('watercraft_id, sessions!inner(ended_at)')
@@ -84,15 +91,32 @@ export default async function CheckinPage() {
 
   return (
     <main className="mx-auto max-w-md px-4 py-8">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-bay-700 dark:text-bay-500">Check in</h1>
-          <p className="text-sm text-slate-500">{member.householdName}</p>
+      <header className="mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-bay-700 dark:text-bay-500">Check in</h1>
+            <p className="text-sm text-slate-500">{member.householdName}</p>
+          </div>
+          <Link href="/board" className="text-sm text-bay-700 dark:text-bay-500">
+            Board →
+          </Link>
         </div>
-        <Link href="/board" className="text-sm text-bay-700 dark:text-bay-500">
-          Board →
-        </Link>
+        <nav className="mt-2 flex gap-4 text-sm text-bay-700 dark:text-bay-500">
+          <Link href="/hulls">Photos</Link>
+          <Link href="/household">Household &amp; members</Link>
+        </nav>
       </header>
+
+      {missingPhotos && missingPhotos > 0 ? (
+        <Link
+          href="/hulls"
+          className="mb-4 block rounded-lg bg-amber-50 p-3 text-sm text-amber-800 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200"
+        >
+          📷 {missingPhotos} of your watercraft {missingPhotos === 1 ? 'has' : 'have'} no photo.
+          Add {missingPhotos === 1 ? 'it' : 'them'} so shore can match the sticker to the boat →
+        </Link>
+      ) : null}
+
       <CheckInForm lakes={lakes} hulls={hulls} mySessions={mySessions} />
     </main>
   );

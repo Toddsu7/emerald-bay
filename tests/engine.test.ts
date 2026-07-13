@@ -355,3 +355,58 @@ describe('queue offer / accept lifecycle (§2.7, §5)', () => {
     expect(await openHulls(db, east)).toBe(1);
   });
 });
+
+describe('clamp boundary (§2.6) — a household AT its cap adding one more', () => {
+  let db: PGlite;
+  beforeEach(async () => {
+    db = await freshDb();
+  });
+
+  it('holding 1 with cap 2, adding a 2nd succeeds; a 3rd is OVER_CAP', async () => {
+    const east = await lakeId(db, 'East');
+    const a = await seedHousehold(db, 'Alpha', [{}, {}, {}]); // 3 boats available
+    await checkIn(db, east, a.hh, a.members[0], [a.hullIds[0]]); // holds 1
+
+    // A queue forms → cap = floor(4 / (1 on water + 1 waiting)) = 2.
+    const b = await seedHousehold(db, 'Bravo', [{}]);
+    await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
+      east,
+      b.hh,
+      b.members[0],
+      NOON_LOCAL,
+    ]);
+    const cap = await db.query<{ c: number }>('select _current_cap($1) as c', [east]);
+    expect(cap.rows[0].c).toBe(2);
+
+    // Holding 1, adding 1, cap 2 → EXACTLY at the boundary → must SUCCEED (1+1=2≤2).
+    const s = await checkIn(db, east, a.hh, a.members[0], [a.hullIds[1]]);
+    expect(s).toBeTruthy();
+    // Household now holds 2 (its cap). One more must be refused with OVER_CAP.
+    await expectCode(checkIn(db, east, a.hh, a.members[0], [a.hullIds[2]]), 'OVER_CAP');
+  });
+
+  it("Todd's case: holding a boat (#107), adding a jet ski (#108) at cap 2, midday → SUCCEEDS", async () => {
+    const east = await lakeId(db, 'East');
+    const a = await seedHousehold(db, 'Sutcliffe', [
+      { type: 'Pontoon' }, // stands in for #107
+      { type: 'Jet Ski' }, // stands in for #108
+    ]);
+    await checkIn(db, east, a.hh, a.members[0], [a.hullIds[0]]); // holds the boat
+
+    const b = await seedHousehold(db, 'Waiter', [{}]);
+    await db.query('select join_queue($1,$2,$3,$4::timestamptz)', [
+      east,
+      b.hh,
+      b.members[0],
+      NOON_LOCAL,
+    ]);
+    expect((await db.query<{ c: number }>('select _current_cap($1) as c', [east])).rows[0].c).toBe(2);
+
+    // Adding the jet ski at NOON_LOCAL (inside 10:00→sunset) at the cap boundary
+    // must succeed — proves the earlier failure was NOT the cap check, and the jet
+    // ski only fails OUT_OF_HOURS when actually outside its window.
+    const s = await checkIn(db, east, a.hh, a.members[0], [a.hullIds[1]], NOON_LOCAL);
+    expect(s).toBeTruthy();
+    expect(await openHulls(db, east)).toBe(2);
+  });
+});

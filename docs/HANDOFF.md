@@ -87,11 +87,24 @@ recomputes caps, and sends offer notifications.
   subscribe endpoint are ready; the browser service-worker + subscribe button is the
   one push piece not yet built — see limitations.)
 
-### Verify the lock (2 min, once hosted)
-From two terminals (or `psql`) fire two `select check_in(<same lake>, …)` calls that
-would exceed capacity at the same instant. Exactly one must win; the other must get
-`LAKE_FULL`/`OVER_CAP`. This confirms the `FOR UPDATE` serialization that PGlite
-couldn't exercise.
+### Verify the lock (real concurrency test — run once against hosted)
+The SQL-editor two-tab approach can't prove this: Supabase's editor runs each
+statement on its own connection and commits before you can switch tabs, so no
+contention is created. Use the real two-connection test instead:
+
+```bash
+# Connection string: Dashboard → Project Settings → Database → "Connection string"
+# (URI). URL-encode the password.
+DATABASE_URL='postgresql://postgres:...@db.heybszfdbvavedjkgggb.supabase.co:5432/postgres' \
+  npm run test:lock
+```
+
+It opens two Postgres connections and races them for the LAST open slot on East, 8
+rounds. **It only touches its own rows** (`ZZ_LOCKTEST_*` households, a far-future
+sun_times date) and deletes them all in a `finally`, even on failure — East/West
+config and the real roster are untouched. Expect: "one won, one refused (LAKE_FULL)"
+every round → `LOCK HOLDS`. A single "BOTH won" means the lock failed — do not ship.
+This is the one gate PGlite couldn't exercise.
 
 ---
 
@@ -123,21 +136,33 @@ couldn't exercise.
 
 ---
 
+## Recently added (this round)
+
+- **Check-in refusals now show the real reason.** The UI was rendering a catch-all
+  ("Something went wrong") because `engineMessage` did `String(<PostgrestError>)` =
+  "[object Object]". Fixed to read the error's `.message`, and enriched with live
+  numbers: "You're over your cap of 2 while 1 household is waiting", "Jet skis can't
+  launch before 10:00 AM", "in cooldown until 4:15 PM", etc. The engine was correct
+  the whole time — a boundary test proves holding 1 + adding 1 at cap 2 SUCCEEDS
+  (Todd's #107 boat + #108 jet ski case), so that failure was a legitimate
+  OUT_OF_HOURS refusal, just badly worded.
+- **Member registration + Kansas age gate** at `/household` — the primary adds
+  spouse/kids (name required, email/mobile, age; 12–20 needs cert-or-supervision +
+  liability ack; under-12 blocked), each gets a magic-link invite. Age-gate logic is
+  unit-tested (`lib/agegate.test.ts`).
+- **Hull photo upload + login nag** — `/hulls` uploads; `/checkin` shows a persistent
+  banner while any hull lacks a photo.
+
 ## Not yet built (honest gaps, none blocking the core)
 
-- **Additional-member registration / invite UI.** Import seeds each household + its
-  primary contact; login links a member row by matching email. The flow to *add* new
-  members (kids/spouse) with name + age + boater-ed attestation isn't built. Schema
-  supports it (`members.birth_year/boater_ed_attested/supervision_only`).
-- **Age-gate enforcement (§7).** It's a registration-time attestation, not a check-in
-  gate (check-in is household-level and doesn't record which member operates which
-  hull). Needs the member-registration UI above.
 - **Web-push client.** Service worker + subscribe button. Server send + storage are
   ready; SMS is the primary ramp channel meanwhile.
 - **PWA icons.** `app/manifest.ts` has no icons yet — add 192/512 PNGs under
   `/public` and reference them.
 - **Board auto-refresh.** The board revalidates on navigation and after actions;
   a live poll/realtime subscription would make it self-updating on shore.
+- **SMS invites.** Member invites go by email (Supabase magic link). Mobile-only
+  members need phone auth (Twilio + Supabase) to receive a sign-in link.
 
 ## Where things live
 - Engine (the spine): `supabase/migrations/0003_checkin_engine.sql`

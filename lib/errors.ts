@@ -1,5 +1,12 @@
 // Map the engine's stable error codes (raised by the 0003 functions) to friendly
-// text. The RPC error message contains the code; we substring-match it.
+// text. A refusal is NOT an error — each of the §4 gates raises a specific code and
+// the UI must show exactly why check-in was refused.
+//
+// IMPORTANT: supabase.rpc() returns a PostgrestError, which is a PLAIN OBJECT, not
+// an `Error` instance. Its raised-exception text lives in `.message` (and `.details`
+// / `.hint`). Earlier this code did `err instanceof Error ? err.message : String(err)`
+// → `String(<plain object>)` = "[object Object]" → matched no code → generic
+// fallback for every gate. rawText() below reads the object fields instead.
 
 export const ENGINE_ERROR_MESSAGES: Record<string, string> = {
   SUSPENDED: 'Your household is suspended and can’t check in or queue.',
@@ -20,10 +27,28 @@ export const ENGINE_ERROR_MESSAGES: Record<string, string> = {
   SESSION_NOT_FOUND: 'That session wasn’t found.',
 };
 
-export function engineMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err ?? '');
-  for (const code of Object.keys(ENGINE_ERROR_MESSAGES)) {
-    if (raw.includes(code)) return ENGINE_ERROR_MESSAGES[code];
+export const ENGINE_CODES = Object.keys(ENGINE_ERROR_MESSAGES);
+
+/** Pull the meaningful text out of whatever the RPC/throw handed us. */
+export function rawText(err: unknown): string {
+  if (err == null) return '';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object') {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string };
+    return [e.message, e.details, e.hint, e.code].filter(Boolean).join(' ');
   }
-  return 'Something went wrong. Please try again.';
+  return String(err);
+}
+
+/** The first engine code present in the error, or null. */
+export function matchCode(err: unknown): string | null {
+  const raw = rawText(err);
+  return ENGINE_CODES.find((code) => raw.includes(code)) ?? null;
+}
+
+/** Static friendly message (no live numbers). Use describeCheckInError for rich text. */
+export function engineMessage(err: unknown): string {
+  const code = matchCode(err);
+  return code ? ENGINE_ERROR_MESSAGES[code] : 'Something went wrong. Please try again.';
 }

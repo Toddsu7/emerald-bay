@@ -5,6 +5,7 @@ import { getCurrentMember } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ensureSunTimes } from '@/lib/sunSync';
 import { engineMessage } from '@/lib/errors';
+import { describeCheckInError } from '@/lib/refusal';
 
 export interface HullSelection {
   watercraftId: string;
@@ -44,7 +45,16 @@ export async function checkInAction(input: {
       p_started_by: member.id,
       p_hulls: payload,
     });
-    if (error) return { ok: false, error: engineMessage(error) };
+    if (error) {
+      return {
+        ok: false,
+        error: await describeCheckInError(error, {
+          lakeId: input.lakeId,
+          householdId: member.householdId,
+          hullIds: input.hulls.map((h) => h.watercraftId),
+        }),
+      };
+    }
     revalidatePath('/board');
     revalidatePath('/checkin');
     return { ok: true, sessionId: data as string };

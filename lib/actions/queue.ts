@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentMember } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { engineMessage } from '@/lib/errors';
+import { describeCheckInError } from '@/lib/refusal';
 import type { ActionResult, HullSelection } from '@/lib/actions/checkin';
 
 /** Join a lake's queue (§2.7). Cooldown/suspension block this in the engine (§2.5). */
@@ -46,7 +47,23 @@ export async function launchAction(input: {
       p_started_by: member.id,
       p_hulls: payload,
     });
-    if (error) return { ok: false, error: engineMessage(error) };
+    if (error) {
+      const { data: entry } = await admin
+        .from('queue_entries')
+        .select('lake_id')
+        .eq('id', input.queueEntryId)
+        .maybeSingle();
+      return {
+        ok: false,
+        error: entry
+          ? await describeCheckInError(error, {
+              lakeId: entry.lake_id,
+              householdId: member.householdId,
+              hullIds: input.hulls.map((h) => h.watercraftId),
+            })
+          : engineMessage(error),
+      };
+    }
     revalidatePath('/board');
     revalidatePath('/checkin');
     return { ok: true, sessionId: data as string };
