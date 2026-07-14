@@ -3,11 +3,12 @@
 import { revalidatePath } from 'next/cache';
 import { getCurrentMember } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { engineMessage } from '@/lib/errors';
+import { engineMessage, matchCode } from '@/lib/errors';
 import { describeCheckInError } from '@/lib/refusal';
 import type { ActionResult, HullSelection } from '@/lib/actions/checkin';
 
-/** Join a lake's queue (§2.7). Cooldown/suspension block this in the engine (§2.5). */
+/** Join a lake's queue (§2.7). Cooldown/suspension block this in the engine (§2.5);
+ *  a lake with open slots is refused ("check in instead"). */
 export async function joinQueueAction(lakeId: string): Promise<ActionResult> {
   const member = await getCurrentMember();
   if (!member) return { ok: false, error: 'You must be signed in.' };
@@ -18,7 +19,26 @@ export async function joinQueueAction(lakeId: string): Promise<ActionResult> {
       p_household_id: member.householdId,
       p_requested_by: member.id,
     });
-    if (error) return { ok: false, error: engineMessage(error) };
+    if (error) {
+      if (matchCode(error) === 'LAKE_HAS_ROOM') {
+        const [{ data: lake }, { data: sw }] = await Promise.all([
+          admin.from('lakes').select('name, capacity').eq('id', lakeId).maybeSingle(),
+          admin
+            .from('session_watercraft')
+            .select('watercraft_id, sessions!inner(lake_id, ended_at)')
+            .eq('sessions.lake_id', lakeId)
+            .is('sessions.ended_at', null),
+        ]);
+        const open = (lake?.capacity ?? 0) - (sw?.length ?? 0);
+        return {
+          ok: false,
+          error: `${lake?.name ?? 'The lake'} has ${open} open slot${
+            open === 1 ? '' : 's'
+          } — check in instead.`,
+        };
+      }
+      return { ok: false, error: engineMessage(error) };
+    }
     revalidatePath('/board');
     revalidatePath('/checkin');
     return { ok: true };

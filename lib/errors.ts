@@ -24,6 +24,7 @@ export const ENGINE_ERROR_MESSAGES: Record<string, string> = {
   OFFER_EXPIRED: 'That queue offer has expired.',
   OFFER_INVALID: 'That queue offer is no longer valid.',
   ALREADY_QUEUED: 'Your household is already in this lake’s queue.',
+  LAKE_HAS_ROOM: 'The lake has open slots — check in instead of queuing.',
   SESSION_NOT_FOUND: 'That session wasn’t found.',
 };
 

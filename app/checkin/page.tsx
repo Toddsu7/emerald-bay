@@ -88,12 +88,20 @@ export default async function CheckinPage() {
     ),
   }));
 
+  const { data: myQueue } = await supabase
+    .from('queue_entries')
+    .select('lake_id')
+    .eq('household_id', member.householdId)
+    .in('status', ['waiting', 'offered']);
+  const queuedLakes = new Set((myQueue ?? []).map((q: any) => q.lake_id));
+
   const lakes: FormLake[] = boards.map((b) => ({
     id: b.id,
     name: b.name,
     slots: b.slots,
     cap: b.cap,
     householdsWaiting: b.householdsWaiting,
+    alreadyQueued: queuedLakes.has(b.id),
   }));
 
   return (

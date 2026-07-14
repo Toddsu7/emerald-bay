@@ -12,6 +12,7 @@ export interface FormLake {
   slots: number;
   cap: number;
   householdsWaiting: number;
+  alreadyQueued: boolean;
 }
 export interface FormHull {
   id: string;
@@ -276,13 +277,21 @@ export function CheckInForm({
         >
           {pending ? 'Working…' : `Check in ${selectedIds.length || ''}`.trim()}
         </button>
-        <button
-          onClick={doJoinQueue}
-          disabled={pending}
-          className="rounded-xl border border-bay-600 px-5 py-3 font-semibold text-bay-700 hover:bg-bay-50 disabled:opacity-50 dark:text-bay-500 dark:hover:bg-slate-900"
-        >
-          Join queue
-        </button>
+        {/* A queue exists to wait for a slot — only offer it when the lake is full
+            (§ nothing to wait for if there's room). */}
+        {lake?.alreadyQueued ? (
+          <span className="flex items-center rounded-xl border border-slate-300 px-5 py-3 text-sm text-slate-500 dark:border-slate-700">
+            In queue
+          </span>
+        ) : lake && lake.slots <= 0 ? (
+          <button
+            onClick={doJoinQueue}
+            disabled={pending}
+            className="rounded-xl border border-bay-600 px-5 py-3 font-semibold text-bay-700 hover:bg-bay-50 disabled:opacity-50 dark:text-bay-500 dark:hover:bg-slate-900"
+          >
+            Join queue
+          </button>
+        ) : null}
       </div>
     </div>
   );
