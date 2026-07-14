@@ -3,8 +3,11 @@ import { redirect } from 'next/navigation';
 import { getCurrentMember } from '@/lib/auth';
 import { getBoard } from '@/lib/board';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { getActiveOffer } from '@/lib/offer';
 import { chicagoClock } from '@/lib/sun';
-import { CheckInForm, type FormLake, type FormHull, type FormSession } from '@/components/CheckInForm';
+import { CheckInForm, type FormLake, type FormHull, type FormSession, type Restriction } from '@/components/CheckInForm';
+import { OfferPanel } from '@/components/OfferPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,6 +107,41 @@ export default async function CheckinPage() {
     alreadyQueued: queuedLakes.has(b.id),
   }));
 
+  // Outstanding queue offer → in-app LAUNCH/PASS (§2.7), no SMS required.
+  const offer = await getActiveOffer(member.householdId);
+
+  // Suspension / cooldown → show the reason + lift time instead of buttons that
+  // would just be refused. (cooldowns are board-only under RLS → use the admin read.)
+  const admin = createAdminClient();
+  let restriction: Restriction | null = null;
+  const { data: hh } = await admin
+    .from('households')
+    .select('status, suspended_until')
+    .eq('id', member.householdId)
+    .maybeSingle();
+  if (
+    hh &&
+    (hh.status === 'suspended' ||
+      (hh.suspended_until && new Date(hh.suspended_until).getTime() > Date.now()))
+  ) {
+    restriction = {
+      kind: 'suspended',
+      until: hh.suspended_until
+        ? new Date(hh.suspended_until).toLocaleDateString()
+        : 'further notice',
+    };
+  } else {
+    const { data: cd } = await admin
+      .from('cooldowns')
+      .select('expires_at')
+      .eq('household_id', member.householdId)
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (cd) restriction = { kind: 'cooldown', until: chicagoClock(new Date(cd.expires_at)) };
+  }
+
   return (
     <main className="mx-auto max-w-md px-4 py-8">
       <header className="mb-4">
@@ -143,7 +181,14 @@ export default async function CheckinPage() {
         ) : null}
       </div>
 
-      <CheckInForm lakes={lakes} hulls={hulls} mySessions={mySessions} />
+      {offer && <OfferPanel offer={offer} hulls={hulls} />}
+
+      <CheckInForm
+        lakes={lakes}
+        hulls={hulls}
+        mySessions={mySessions}
+        restriction={restriction}
+      />
     </main>
   );
 }

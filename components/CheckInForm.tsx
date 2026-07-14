@@ -28,6 +28,10 @@ export interface FormSession {
   willRenew: boolean;
   stickers: number[];
 }
+export interface Restriction {
+  kind: 'suspended' | 'cooldown';
+  until: string; // preformatted (date for suspension, clock for cooldown)
+}
 
 interface Selection {
   isGuest: boolean;
@@ -38,10 +42,12 @@ export function CheckInForm({
   lakes,
   hulls,
   mySessions,
+  restriction,
 }: {
   lakes: FormLake[];
   hulls: FormHull[];
   mySessions: FormSession[];
+  restriction?: Restriction | null;
 }) {
   const [lakeId, setLakeId] = useState(lakes[0]?.id ?? '');
   const [selected, setSelected] = useState<Record<string, Selection>>({});
@@ -269,30 +275,39 @@ export function CheckInForm({
       {error && <p className="text-sm text-red-600">{error}</p>}
       {notice && <p className="text-sm text-bay-700 dark:text-bay-400">{notice}</p>}
 
-      <div className="flex gap-2">
-        <button
-          onClick={doCheckIn}
-          disabled={pending || selectedIds.length === 0}
-          className="flex-1 rounded-xl bg-bay-600 px-5 py-3 font-semibold text-white hover:bg-bay-700 disabled:opacity-50"
-        >
-          {pending ? 'Working…' : `Check in ${selectedIds.length || ''}`.trim()}
-        </button>
-        {/* A queue exists to wait for a slot — only offer it when the lake is full
-            (§ nothing to wait for if there's room). */}
-        {lake?.alreadyQueued ? (
-          <span className="flex items-center rounded-xl border border-slate-300 px-5 py-3 text-sm text-slate-500 dark:border-slate-700">
-            In queue
-          </span>
-        ) : lake && lake.slots <= 0 ? (
+      {restriction ? (
+        // Honest disabled state, not a late refusal.
+        <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          {restriction.kind === 'suspended'
+            ? `Your household is suspended until ${restriction.until}. You can’t check in or queue until then.`
+            : `Your household is in cooldown until ${restriction.until}. You can’t check in or queue until then.`}
+        </p>
+      ) : (
+        <div className="flex gap-2">
           <button
-            onClick={doJoinQueue}
-            disabled={pending}
-            className="rounded-xl border border-bay-600 px-5 py-3 font-semibold text-bay-700 hover:bg-bay-50 disabled:opacity-50 dark:text-bay-500 dark:hover:bg-slate-900"
+            onClick={doCheckIn}
+            disabled={pending || selectedIds.length === 0}
+            className="flex-1 rounded-xl bg-bay-600 px-5 py-3 font-semibold text-white hover:bg-bay-700 disabled:opacity-50"
           >
-            Join queue
+            {pending ? 'Working…' : `Check in ${selectedIds.length || ''}`.trim()}
           </button>
-        ) : null}
-      </div>
+          {/* A queue exists to wait for a slot — only offer it when the lake is full
+              (§ nothing to wait for if there's room). */}
+          {lake?.alreadyQueued ? (
+            <span className="flex items-center rounded-xl border border-slate-300 px-5 py-3 text-sm text-slate-500 dark:border-slate-700">
+              In queue
+            </span>
+          ) : lake && lake.slots <= 0 ? (
+            <button
+              onClick={doJoinQueue}
+              disabled={pending}
+              className="rounded-xl border border-bay-600 px-5 py-3 font-semibold text-bay-700 hover:bg-bay-50 disabled:opacity-50 dark:text-bay-500 dark:hover:bg-slate-900"
+            >
+              Join queue
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
